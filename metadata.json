@@ -1,0 +1,9 @@
+{
+  "name": "Zorion - Gestão Pecuária",
+  "description": "Sistema de gestão de visitas técnicas e nutrição animal para bovinos de corte.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
