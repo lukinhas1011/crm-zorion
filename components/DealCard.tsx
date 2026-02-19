@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { Deal, Activity } from '../types';
-import { Building2, Pencil, CalendarClock, Package, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Building2, Pencil, CalendarClock, Package, AlertCircle, CheckCircle2, User } from 'lucide-react';
 
 interface DealCardProps {
   deal: Deal;
@@ -35,27 +35,16 @@ export const DealCard: React.FC<DealCardProps> = ({
 
   const isGenericTitle = isGeneric(rawTitle);
 
-  // Se o título for genérico ou igual ao nome do cliente, não exibimos como título secundário
+  // Título Secundário (Menor, Cinza) -> Deal Title (Suplementação Global)
   let displayTitle = rawTitle;
-  const clientNameLower = (deal.clientName || '').toLowerCase();
-  
-  if (isGenericTitle || (deal.clientName && lowerTitle === clientNameLower)) {
+  if (isGenericTitle) {
       displayTitle = '';
   }
 
-  // Nome do Cliente Principal (Prioridade: clientName > farmName > Title > 'Cliente sem nome')
-  let mainDisplayName = deal.clientName;
+  // Nome Principal (Maior, Escuro) -> Nome da Unidade (Farm Name)
+  let mainDisplayName = deal.farmName;
   if (isGeneric(mainDisplayName)) {
-      mainDisplayName = deal.farmName;
-      if (isGeneric(mainDisplayName)) {
-          // Se ambos forem genéricos, tenta usar o título se ele NÃO for genérico
-          mainDisplayName = !isGenericTitle ? rawTitle : 'Cliente sem nome';
-      }
-  }
-
-  // Garante que se o título for igual ao nome da fazenda, também limpamos o título secundário
-  if (deal.farmName && lowerTitle === deal.farmName.toLowerCase()) {
-      displayTitle = '';
+      mainDisplayName = deal.clientName || 'Unidade sem nome';
   }
 
   // Cálculos de Moeda
@@ -129,10 +118,10 @@ export const DealCard: React.FC<DealCardProps> = ({
 
         <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
           <div className="h-6 w-6 bg-white rounded-lg flex items-center justify-center border border-slate-100 shrink-0 shadow-sm">
-             <Building2 size={12} className="text-slate-400" />
+             <User size={12} className="text-slate-400" />
           </div>
           <span className="text-[10px] font-black text-slate-600 truncate uppercase flex-1 italic">
-            {deal.farmName}
+            {deal.clientName}
           </span>
         </div>
 
@@ -149,7 +138,7 @@ export const DealCard: React.FC<DealCardProps> = ({
                  </p>
              )}
              
-             <div className="font-black italic tracking-tighter leading-tight text-lg text-emerald-900 mt-0.5">
+             <div className="font-black italic tracking-tighter leading-tight text-sm text-emerald-900 mt-0.5 whitespace-nowrap">
                 $ {valUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
              </div>
           </div>

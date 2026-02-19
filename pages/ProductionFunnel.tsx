@@ -671,8 +671,8 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
                                                 />
                                             </div>
                                             <div className="flex items-center gap-2">
-                                                <input type="number" className="w-10 bg-white border border-slate-200 rounded px-1 py-0.5 text-center text-[10px] font-bold outline-none" value={prod.quantity} onChange={(e) => updateProduct(idx, { quantity: Number(e.target.value) })} />
-                                                <input type="number" className="w-16 bg-white border border-slate-200 rounded px-1 py-0.5 text-right text-[10px] font-bold outline-none text-[#009b58]" value={prod.price} onChange={(e) => updateProduct(idx, { price: Number(e.target.value) })} />
+                                                <input type="number" className="w-20 bg-white border border-slate-200 rounded px-1 py-0.5 text-center text-[10px] font-bold outline-none" value={prod.quantity} onChange={(e) => updateProduct(idx, { quantity: Number(e.target.value) })} />
+                                                <input type="number" className="w-32 bg-white border border-slate-200 rounded px-1 py-0.5 text-right text-[10px] font-bold outline-none text-[#009b58]" value={prod.price} onChange={(e) => updateProduct(idx, { price: Number(e.target.value) })} />
                                                 <button onClick={() => removeProduct(idx)} className="text-red-300 hover:text-red-500"><Trash2 size={12} /></button>
                                             </div>
                                         </div>
