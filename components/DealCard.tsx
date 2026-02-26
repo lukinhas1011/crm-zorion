@@ -1,7 +1,7 @@
 
 import React, { useMemo } from 'react';
 import { Deal, Activity } from '../types';
-import { Building2, Pencil, CalendarClock, Package, AlertCircle, CheckCircle2, User } from 'lucide-react';
+import { Building2, Pencil, CalendarClock, Package, AlertCircle, CheckCircle2, User, History } from 'lucide-react';
 
 interface DealCardProps {
   deal: Deal;
@@ -12,10 +12,13 @@ interface DealCardProps {
   currencyMode?: 'BRL' | 'USD';
   exchangeRate?: number;
   onUpdate?: (deal: Deal) => void;
+  onWon?: (deal: Deal) => void;
+  onLost?: (deal: Deal) => void;
+  onRevert?: (deal: Deal) => void;
 }
 
 export const DealCard: React.FC<DealCardProps> = ({ 
-  deal, activities, onClick, onDragStart, showCreator = false, currencyMode = 'BRL', exchangeRate = 1, onUpdate 
+  deal, activities, onClick, onDragStart, showCreator = false, currencyMode = 'BRL', exchangeRate = 1, onUpdate, onWon, onLost, onRevert
 }) => {
   const hasProducts = deal.products && deal.products.length > 0;
   
@@ -156,6 +159,61 @@ export const DealCard: React.FC<DealCardProps> = ({
              />
           </div>
         </div>
+
+        {/* Botões de Ganho/Perda (Apenas se as funções forem passadas) */}
+        {(onWon || onLost || (onRevert && deal.customAttributes?.transferredFromSales)) && (
+          <div 
+            className="flex gap-2 pt-2 border-t border-slate-50 mt-1 relative z-[100]"
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            {onWon && (
+              <button 
+                type="button"
+                draggable={false}
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (onWon) onWon(deal); 
+                }}
+                className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-emerald-700 active:scale-95 transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer border-none"
+              >
+                <CheckCircle2 size={12} /> Ganhei
+              </button>
+            )}
+            {onLost && (
+              <button 
+                type="button"
+                draggable={false}
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (onLost) onLost(deal); 
+                }}
+                className="flex-1 py-2.5 bg-red-600 text-white rounded-xl text-[10px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer border-none"
+              >
+                <AlertCircle size={12} /> Perdi
+              </button>
+            )}
+            {onRevert && deal.customAttributes?.transferredFromSales && (
+              <button 
+                type="button"
+                draggable={false}
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  onRevert(deal); 
+                }}
+                className="flex items-center gap-1 text-[8px] font-black text-slate-300 uppercase tracking-widest hover:text-blue-600 transition-colors cursor-pointer border-none bg-transparent py-1"
+              >
+                <History size={10} /> Reverter para Vendas
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

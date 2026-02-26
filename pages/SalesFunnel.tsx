@@ -1,11 +1,12 @@
 
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { Deal, Stage, Pipeline, Activity, Client, User, CatalogItem, Visit, Attachment, DealProduct } from '../types';
 import { 
   Plus, X, Building2, Trash2, ChevronDown, 
   Phone, Calendar, DollarSign, MessageSquare, Send, 
   Clock, History, Paperclip, Loader2, Trello,
-  AlertTriangle, Beef, Package, Target, Coins, Camera, ImageIcon, Pencil, FileText, Search, UserPlus, Check, Video, ExternalLink
+  AlertTriangle, Beef, Package, Target, Coins, Camera, ImageIcon, Pencil, FileText, Search, UserPlus, Check, Video, ExternalLink,
+  Archive, Trophy, ThumbsDown, Mic, ArrowRight, FlaskConical
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { KanbanColumn } from '../components/KanbanColumn';
@@ -39,11 +40,10 @@ interface SalesFunnelProps {
 
 const FIXED_PIPELINE_ID = 'pip_principal';
 const FIXED_STAGES: Stage[] = [
-  { id: 'stg_1', pipelineId: FIXED_PIPELINE_ID, name: 'Cliente potencial', order: 1, probability: 20 },
-  { id: 'stg_2', pipelineId: FIXED_PIPELINE_ID, name: 'Estabelecimento de oportunidade', order: 2, probability: 40 },
-  { id: 'stg_3', pipelineId: FIXED_PIPELINE_ID, name: 'Validação de negociação', order: 3, probability: 60 },
-  { id: 'stg_4', pipelineId: FIXED_PIPELINE_ID, name: 'Validação', order: 4, probability: 80 },
-  { id: 'stg_5', pipelineId: FIXED_PIPELINE_ID, name: 'Negociação comercial', order: 5, probability: 100 }
+  { id: 'stg_1', pipelineId: FIXED_PIPELINE_ID, name: 'Cliente potencial', order: 1, probability: 25 },
+  { id: 'stg_2', pipelineId: FIXED_PIPELINE_ID, name: 'Estabelecimento de oportunidade', order: 2, probability: 50 },
+  { id: 'stg_3', pipelineId: FIXED_PIPELINE_ID, name: 'Validação de negociação', order: 3, probability: 75 },
+  { id: 'stg_4', pipelineId: FIXED_PIPELINE_ID, name: 'Validação e negociação comercial', order: 4, probability: 100 }
 ];
 
 const SalesFunnel: React.FC<SalesFunnelProps> = ({ 
@@ -54,6 +54,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editDealData, setEditDealData] = useState<Deal | null>(null);
+  const [activeTab, setActiveTab] = useState<'interaction' | 'formula'>('interaction');
   
   // States para o Modal de Seleção de Cliente
   const [isSelectionModalOpen, setIsSelectionModalOpen] = useState(false);
@@ -82,9 +83,24 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editActFiles, setEditActFiles] = useState<File[]>([]);
   const [isSavingEditAct, setIsSavingEditAct] = useState(false);
+
+  // States para Ganho/Perda/Reversão
+  const [isLossModalOpen, setIsLossModalOpen] = useState(false);
+  const [isWonModalOpen, setIsWonModalOpen] = useState(false);
+  const [isReopenModalOpen, setIsReopenModalOpen] = useState(false);
+  const [dealToMarkAsLost, setDealToMarkAsLost] = useState<Deal | null>(null);
+  const [dealToMarkAsWon, setDealToMarkAsWon] = useState<Deal | null>(null);
+  const [dealToReopen, setDealToReopen] = useState<Deal | null>(null);
+  const [lossReason, setLossReason] = useState('');
+  const [lossFiles, setLossFiles] = useState<File[]>([]);
+  const [isSavingLoss, setIsSavingLoss] = useState(false);
+
+  const [view, setView] = useState<'funnel' | 'archive'>('funnel');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const lossFileInputRef = useRef<HTMLInputElement>(null);
+  const lossCameraInputRef = useRef<HTMLInputElement>(null);
   const editActFileInputRef = useRef<HTMLInputElement>(null);
 
   // Abre o modal de seleção antes do modal de Deal
@@ -174,6 +190,124 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
     else onUpdateDeal(editDealData);
     setIsEditModalOpen(false);
   };
+
+  const handleWonDeal = useCallback((deal: Deal) => {
+    setDealToMarkAsWon(deal);
+    setIsWonModalOpen(true);
+  }, []);
+
+  const handleConfirmWonDeal = useCallback(() => {
+    if (!dealToMarkAsWon) return;
+    onUpdateDeal({ 
+        ...dealToMarkAsWon, 
+        status: 'Won', 
+        updatedAt: new Date().toISOString(),
+        customAttributes: { ...(dealToMarkAsWon.customAttributes || {}), wonDate: new Date().toISOString() }
+    });
+    setIsWonModalOpen(false);
+    setDealToMarkAsWon(null);
+  }, [dealToMarkAsWon, onUpdateDeal]);
+
+  const handleTransferToProduction = useCallback(() => {
+    if (!dealToMarkAsWon) return;
+    // Mover para o funil de produção (pip_capacidade) na primeira etapa (cap_1)
+    onUpdateDeal({ 
+        ...dealToMarkAsWon, 
+        status: 'Open', 
+        pipelineId: 'pip_capacidade',
+        stageId: 'cap_1',
+        updatedAt: new Date().toISOString(),
+        customAttributes: { 
+            ...(dealToMarkAsWon.customAttributes || {}), 
+            wonDate: new Date().toISOString(),
+            transferredFromSales: true 
+        }
+    });
+    setIsWonModalOpen(false);
+    setDealToMarkAsWon(null);
+  }, [dealToMarkAsWon, onUpdateDeal]);
+
+  const handleLostDealClick = useCallback((deal: Deal) => {
+    const dealTitle = deal.title || deal.farmName || 'esta oportunidade';
+    if (window.confirm(`Tem certeza que deseja marcar a oportunidade "${dealTitle}" como PERDIDA?`)) {
+        setDealToMarkAsLost(deal);
+        setLossReason('');
+        setLossFiles([]);
+        setIsLossModalOpen(true);
+    }
+  }, []);
+
+  const handleReopenDeal = useCallback((deal: Deal) => {
+    setDealToReopen(deal);
+    setIsReopenModalOpen(true);
+  }, []);
+
+  const handleConfirmReopenDeal = useCallback(() => {
+    if (!dealToReopen) return;
+    // Ao reverter, garantimos que ele volte para o funil de vendas (pip_principal) 
+    // e status Open, caso tenha sido transferido para produção
+    onUpdateDeal({ 
+        ...dealToReopen, 
+        status: 'Open', 
+        pipelineId: 'pip_principal',
+        stageId: dealToReopen.stageId.startsWith('stg_') ? dealToReopen.stageId : 'stg_1',
+        updatedAt: new Date().toISOString() 
+    });
+    setIsReopenModalOpen(false);
+    setDealToReopen(null);
+  }, [dealToReopen, onUpdateDeal]);
+
+  const handleConfirmLostDeal = useCallback(async () => {
+    if (!dealToMarkAsLost || !lossReason.trim()) return;
+    setIsSavingLoss(true);
+    try {
+        const actId = `act_loss_${Date.now()}`;
+        const atts: Attachment[] = [];
+        for (const file of lossFiles) {
+            const url = await uploadVisitFile(file, dealToMarkAsLost.clientId, actId);
+            atts.push({ 
+                id: `att_${Math.random().toString(36).substr(2, 9)}`, 
+                url, 
+                name: file.name, 
+                type: file.type.startsWith('image/') ? 'image' : 
+                      file.type.startsWith('video/') ? 'video' : 
+                      file.type.startsWith('audio/') ? 'audio' : 'document' 
+            });
+        }
+
+        // Registrar como uma atividade de fechamento
+        onAddActivity({
+            id: actId, 
+            clientId: dealToMarkAsLost.clientId, 
+            dealId: dealToMarkAsLost.id,
+            type: 'Task', 
+            title: `Oportunidade Perdida: ${lossReason.substring(0, 30)}...`,
+            description: `MOTIVO DA PERDA: ${lossReason}`, 
+            dueDate: new Date().toISOString(),
+            isDone: true,
+            technicianId: user.id, 
+            attachments: atts, 
+            createdAt: new Date().toISOString()
+        });
+
+        onUpdateDeal({ 
+            ...dealToMarkAsLost, 
+            status: 'Lost', 
+            customAttributes: { 
+                ...dealToMarkAsLost.customAttributes, 
+                lossReason: lossReason.trim(),
+                lostDate: new Date().toISOString()
+            },
+            updatedAt: new Date().toISOString() 
+        });
+        setIsLossModalOpen(false);
+        setDealToMarkAsLost(null);
+    } catch (e) {
+        alert("Erro ao salvar motivo da perda.");
+    } finally {
+        setIsSavingLoss(false);
+    }
+  }, [dealToMarkAsLost, lossReason, lossFiles, onAddActivity, onUpdateDeal, user.id]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -335,6 +469,15 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
     });
   }, [deals, searchTerm]);
 
+  const archivedDeals = useMemo(() => {
+    return deals.filter(d => {
+      const matchesSearch = d.title.toLowerCase().includes(searchTerm.toLowerCase()) || d.farmName.toLowerCase().includes(searchTerm.toLowerCase());
+      // Negócios ganhos/perdidos OU negócios que foram transferidos para produção
+      const isArchived = d.status !== 'Open' || d.customAttributes?.transferredFromSales === true;
+      return isArchived && matchesSearch;
+    });
+  }, [deals, searchTerm]);
+
   const dealTimeline = useMemo(() => {
     if (!editDealData) return [];
     return activities.filter(a => a.dealId === editDealData.id).sort((a, b) => b.dueDate.localeCompare(a.dueDate));
@@ -356,22 +499,122 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
          <div className="flex items-center gap-3">
              <Trello size={18} className="text-zorion-900" />
              <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 italic">Oportunidades</h3>
+             
+             <div className="flex bg-slate-100 p-1 rounded-xl ml-4">
+                <button 
+                  onClick={() => setView('funnel')}
+                  className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-2 ${view === 'funnel' ? 'bg-white text-zorion-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  <Trello size={12} /> Funil Ativo
+                </button>
+                <button 
+                  onClick={() => setView('archive')}
+                  className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-2 ${view === 'archive' ? 'bg-white text-zorion-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  <Archive size={12} /> Arquivados
+                </button>
+             </div>
+
              <input type="text" placeholder="Filtrar..." className="ml-4 px-4 py-2 bg-slate-50 border rounded-xl text-xs font-bold outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
          </div>
          <Button onClick={handleStartNewDeal} className="bg-zorion-900 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase shadow-lg">Nova Oportunidade</Button>
       </div>
 
-      <div className="flex-1 flex overflow-x-auto p-4 gap-4">
-        {FIXED_STAGES.map((stage, idx) => (
-           <KanbanColumn 
-             key={stage.id} stage={stage} index={idx} 
-             deals={filteredDeals.filter(d => d.stageId === stage.id)} 
-             activities={activities}
-             onDealClick={(d) => { setEditDealData(d); setQuickFiles([]); setIsEditModalOpen(true); }}
-             onMoveDeal={(id, sid) => onUpdateDeal({...deals.find(d => d.id === id)!, stageId: sid})}
-             onDealUpdate={onUpdateDeal}
-           />
-        ))}
+      <div className="flex-1 flex overflow-hidden">
+        {view === 'funnel' ? (
+          <div className="flex-1 flex overflow-x-auto p-4 gap-4">
+            {FIXED_STAGES.map((stage, idx) => (
+               <KanbanColumn 
+                 key={stage.id} stage={stage} index={idx} 
+                 deals={filteredDeals.filter(d => d.stageId === stage.id)} 
+                 activities={activities}
+                 onDealClick={(d) => { setEditDealData(d); setQuickFiles([]); setIsEditModalOpen(true); }}
+                 onMoveDeal={(id, sid) => onUpdateDeal({...deals.find(d => d.id === id)!, stageId: sid})}
+                 onDealUpdate={onUpdateDeal}
+                 onWon={handleWonDeal}
+                 onLost={handleLostDealClick}
+               />
+            ))}
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30">
+             <div className="max-w-6xl mx-auto">
+                <div className="flex justify-between items-end mb-8">
+                   <div>
+                      <h2 className="text-2xl font-black text-slate-900 italic uppercase tracking-tighter">Negócios Fechados</h2>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Histórico de sucessos e aprendizados</p>
+                   </div>
+                   <div className="flex gap-4 text-xs font-black uppercase italic">
+                      <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-2 rounded-xl border border-emerald-100">
+                         <Trophy size={14} /> {archivedDeals.filter(d => d.status === 'Won').length} Ganhos
+                      </div>
+                      <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-2 rounded-xl border border-red-100">
+                         <ThumbsDown size={14} /> {archivedDeals.filter(d => d.status === 'Lost').length} Perdidos
+                      </div>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                   {archivedDeals.map(deal => (
+                      <div 
+                        key={deal.id}
+                        onClick={() => { setEditDealData(deal); setQuickFiles([]); setIsEditModalOpen(true); }}
+                        className="bg-white p-6 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all cursor-pointer group relative overflow-hidden"
+                      >
+                         <div className={`absolute top-0 left-0 right-0 h-1.5 ${
+                            deal.customAttributes?.transferredFromSales ? 'bg-blue-500' :
+                            deal.status === 'Won' ? 'bg-emerald-500' : 'bg-red-500'
+                         }`} />
+                         
+                         <div className="flex justify-between items-start mb-4">
+                            <div>
+                               <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest italic">{deal.title}</span>
+                               <h4 className="text-lg font-black text-slate-800 uppercase italic leading-tight">{deal.farmName}</h4>
+                            </div>
+                            <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${
+                               deal.customAttributes?.transferredFromSales ? 'bg-blue-50 text-blue-600 border border-blue-100' :
+                               deal.status === 'Won' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 
+                               'bg-red-50 text-red-600 border border-red-100'
+                            }`}>
+                               {deal.customAttributes?.transferredFromSales ? 'Em Produção' : deal.status === 'Won' ? 'Ganho' : 'Perdido'}
+                            </div>
+                         </div>
+
+                         <div className="space-y-3 mb-6">
+                            <div className="flex items-center gap-2 text-slate-500">
+                               <Calendar size={12} />
+                               <span className="text-[10px] font-bold uppercase">Início: {new Date(deal.createdAt || '').toLocaleDateString('pt-BR')}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-slate-500">
+                               <Clock size={12} />
+                               <span className="text-[10px] font-bold uppercase">Fim: {new Date(deal.status === 'Won' ? (deal.customAttributes?.wonDate || deal.updatedAt) : (deal.customAttributes?.lostDate || deal.updatedAt)).toLocaleDateString('pt-BR')}</span>
+                            </div>
+                         </div>
+
+                         <div className="flex justify-between items-center pt-4 border-t border-slate-50">
+                            <div className="text-sm font-black text-slate-900 italic">$ {deal.value.toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                            <div className="flex items-center gap-3">
+                               <button 
+                                 onClick={(e) => { e.stopPropagation(); handleReopenDeal(deal); }}
+                                 className="text-[9px] font-black text-blue-600 uppercase tracking-widest hover:text-blue-800 transition-colors flex items-center gap-1"
+                               >
+                                 <History size={10} /> Reverter
+                               </button>
+                               <div className="text-[9px] font-black text-zorion-600 uppercase tracking-widest group-hover:translate-x-1 transition-transform flex items-center gap-1">Ver Histórico <ArrowRight size={10} /></div>
+                            </div>
+                         </div>
+                      </div>
+                   ))}
+                   {archivedDeals.length === 0 && (
+                      <div className="col-span-full py-20 text-center bg-white rounded-[3rem] border-2 border-dashed border-slate-100">
+                         <Archive size={48} className="mx-auto text-slate-200 mb-4" />
+                         <p className="text-sm font-black text-slate-300 uppercase italic tracking-widest">Nenhum negócio arquivado encontrado</p>
+                      </div>
+                   )}
+                </div>
+             </div>
+          </div>
+        )}
       </div>
 
       {/* MODAL DE SELEÇÃO DE CLIENTE (Gatekeeper) */}
@@ -549,49 +792,86 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
              <div className="flex-1 flex overflow-hidden flex-col md:flex-row">
                 <div className="w-full md:w-[340px] border-r border-slate-100 p-8 space-y-6 overflow-y-auto bg-slate-50/30">
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
-                        <h4 className="text-xs font-black uppercase text-slate-800 mb-4 flex items-center gap-2"><MessageSquare size={14} className="text-blue-600" /> Registrar Interação</h4>
-                        
-                        {/* Seletor de Data e Tipo */}
-                        <div className="flex flex-col gap-2 mb-3">
-                            <input 
-                                type="datetime-local" 
-                                className="w-full p-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-zorion-500"
-                                value={interactionDate}
-                                onChange={(e) => setInteractionDate(e.target.value)}
-                            />
-                            <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
-                                {(['Call', 'Whatsapp', 'Email', 'Meeting'] as const).map(t => (
-                                    <button key={t} onClick={() => setInteractionType(t)} className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg transition-all ${interactionType === t ? 'bg-white text-zorion-900 shadow-sm' : 'text-slate-400'}`}>{t}</button>
-                                ))}
-                            </div>
+                        <div className="flex gap-2 mb-6 border-b border-slate-50 pb-4">
+                            <button 
+                                onClick={() => setActiveTab('interaction')}
+                                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'interaction' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <MessageSquare size={14} /> Interação
+                            </button>
+                            <button 
+                                onClick={() => setActiveTab('formula')}
+                                className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'formula' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                                <FlaskConical size={14} /> Fórmula
+                            </button>
                         </div>
 
-                        <textarea value={quickNote} onChange={e => setQuickNote(e.target.value)} className="w-full h-32 p-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:border-zorion-500 transition-all shadow-inner" placeholder={`Detalhes da ${interactionType}...`} />
-                        
-                        {quickFiles.length > 0 && (
-                          <div className="mt-4 space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-                             <p className="text-[9px] font-black uppercase text-slate-400 px-1">Anexos prontos ({quickFiles.length}):</p>
-                             {quickFiles.map((f, i) => (
-                               <div key={i} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100 group/file">
-                                  <div className="flex items-center gap-2 overflow-hidden">
-                                     {f.type.startsWith('image/') ? <ImageIcon size={12} className="text-purple-500 shrink-0" /> : <Paperclip size={12} className="text-slate-400 shrink-0" />}
-                                     <span className="text-[10px] font-bold text-slate-600 truncate">{f.name}</span>
+                        {activeTab === 'interaction' ? (
+                            <>
+                                <h4 className="text-xs font-black uppercase text-slate-800 mb-4 flex items-center gap-2"><MessageSquare size={14} className="text-blue-600" /> Registrar Interação</h4>
+                                
+                                {/* Seletor de Data e Tipo */}
+                                <div className="flex flex-col gap-2 mb-3">
+                                    <input 
+                                        type="datetime-local" 
+                                        className="w-full p-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-zorion-500"
+                                        value={interactionDate}
+                                        onChange={(e) => setInteractionDate(e.target.value)}
+                                    />
+                                    <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
+                                        {(['Call', 'Whatsapp', 'Email', 'Meeting'] as const).map(t => (
+                                            <button key={t} onClick={() => setInteractionType(t)} className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg transition-all ${interactionType === t ? 'bg-white text-zorion-900 shadow-sm' : 'text-slate-400'}`}>{t}</button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <textarea value={quickNote} onChange={e => setQuickNote(e.target.value)} className="w-full h-32 p-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:border-zorion-500 transition-all shadow-inner" placeholder={`Detalhes da ${interactionType}...`} />
+                                
+                                {quickFiles.length > 0 && (
+                                  <div className="mt-4 space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
+                                     <p className="text-[9px] font-black uppercase text-slate-400 px-1">Anexos prontos ({quickFiles.length}):</p>
+                                     {quickFiles.map((f, i) => (
+                                       <div key={i} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100 group/file">
+                                          <div className="flex items-center gap-2 overflow-hidden">
+                                             {f.type.startsWith('image/') ? <ImageIcon size={12} className="text-purple-500 shrink-0" /> : <Paperclip size={12} className="text-slate-400 shrink-0" />}
+                                             <span className="text-[10px] font-bold text-slate-600 truncate">{f.name}</span>
+                                          </div>
+                                          <button type="button" onClick={() => setQuickFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600 p-1 transition-colors"><Trash2 size={14} /></button>
+                                       </div>
+                                     ))}
                                   </div>
-                                  <button type="button" onClick={() => setQuickFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600 p-1 transition-colors"><Trash2 size={14} /></button>
-                               </div>
-                             ))}
-                          </div>
-                        )}
+                                )}
 
-                        <div className="flex justify-between items-center gap-2 mt-4">
-                            <button type="button" onClick={() => cameraInputRef.current?.click()} className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-purple-600 shadow-sm active:scale-95 transition-all"><Camera size={18} /></button>
-                            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-zorion-600 shadow-sm active:scale-95 transition-all"><Paperclip size={18} /></button>
-                            
-                            <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileChange} />
-                            <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} />
-                            
-                            <Button onClick={handleRegisterInteraction} isLoading={isUploading} className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase bg-[#83a697] hover:bg-[#6c8a7c] text-white shadow-md flex items-center justify-center gap-2"><Send size={14}/> Registrar</Button>
-                        </div>
+                                <div className="flex justify-between items-center gap-2 mt-4">
+                                    <button type="button" onClick={() => cameraInputRef.current?.click()} className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-purple-600 shadow-sm active:scale-95 transition-all"><Camera size={18} /></button>
+                                    <button type="button" onClick={() => fileInputRef.current?.click()} className="p-3 bg-white border border-slate-200 rounded-xl text-slate-400 hover:text-zorion-600 shadow-sm active:scale-95 transition-all"><Paperclip size={18} /></button>
+                                    
+                                    <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+                                    <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} />
+                                    
+                                    <Button onClick={handleRegisterInteraction} isLoading={isUploading} className="flex-1 py-3 rounded-xl text-[10px] font-black uppercase bg-[#83a697] hover:bg-[#6c8a7c] text-white shadow-md flex items-center justify-center gap-2"><Send size={14}/> Registrar</Button>
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                <h4 className="text-xs font-black uppercase text-slate-800 mb-4 flex items-center gap-2"><FlaskConical size={14} className="text-emerald-600" /> Fórmula da Ração</h4>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-4 tracking-widest leading-tight">
+                                    Defina a composição da ração exclusiva para este cliente.
+                                </p>
+                                <textarea 
+                                    value={editDealData.feedFormula || ''} 
+                                    onChange={e => setEditDealData({...editDealData, feedFormula: e.target.value})} 
+                                    className="w-full h-64 p-4 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:border-emerald-500 transition-all shadow-inner resize-none" 
+                                    placeholder="Ex: 60% Milho, 20% Farelo de Soja, 15% Núcleo, 5% Calcário..." 
+                                />
+                                <div className="mt-4 p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                                    <p className="text-[9px] font-black text-emerald-700 uppercase leading-relaxed">
+                                        As alterações na fórmula são salvas automaticamente ao salvar a negociação.
+                                    </p>
+                                </div>
+                            </>
+                        )}
                     </div>
 
                     <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm">
@@ -733,13 +1013,154 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
              </div>
 
              <div className="px-8 py-5 border-t border-slate-100 flex justify-between items-center shrink-0 bg-white">
-                <button onClick={() => setItemToDelete({ type: 'deal', data: editDealData })} className="text-red-500 font-black text-[11px] uppercase flex items-center gap-2 px-4 py-2 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={16} /> Excluir</button>
+                <div className="flex gap-2">
+                    <button onClick={() => setItemToDelete({ type: 'deal', data: editDealData })} className="text-red-500 font-black text-[11px] uppercase flex items-center gap-2 px-4 py-2 hover:bg-red-50 rounded-xl transition-colors"><Trash2 size={16} /> Excluir</button>
+                    {editDealData.status !== 'Open' && (
+                        <button 
+                            onClick={() => { handleReopenDeal(editDealData); setIsEditModalOpen(false); }} 
+                            className="text-blue-600 font-black text-[11px] uppercase flex items-center gap-2 px-4 py-2 hover:bg-blue-50 rounded-xl transition-colors"
+                        >
+                            <History size={16} /> Reverter para Aberto
+                        </button>
+                    )}
+                </div>
                 <div className="flex gap-3">
                     <button type="button" onClick={() => setIsEditModalOpen(false)} className="px-8 py-3 bg-white border border-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase hover:bg-slate-50 transition-all">Fechar</button>
                     <button type="button" onClick={handleSaveDeal} className="px-12 py-3 bg-[#009b58] text-white rounded-xl text-[10px] font-black uppercase shadow-xl shadow-[#009b58]/20 hover:bg-[#007e47] transition-all">Salvar Alterações</button>
                 </div>
              </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Ganho */}
+      {isWonModalOpen && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl relative border border-slate-100 text-center">
+                <div className="w-20 h-20 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-emerald-100">
+                    <Trophy size={40} className="text-emerald-600" />
+                </div>
+                
+                <h3 className="text-2xl font-black text-slate-900 italic tracking-tighter uppercase mb-2">Parabéns!</h3>
+                <p className="text-sm font-bold text-slate-500 mb-8 uppercase tracking-widest leading-relaxed">
+                    A oportunidade <span className="text-slate-900 italic">"{dealToMarkAsWon?.title || dealToMarkAsWon?.farmName}"</span> foi <span className="text-emerald-600">GANHA</span>! <br/>
+                    O que deseja fazer agora?
+                </p>
+
+                <div className="flex flex-col gap-3">
+                    <button 
+                        onClick={handleTransferToProduction}
+                        className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Beef size={16} /> Transferir para Clientes Ativos
+                    </button>
+                    <button 
+                        onClick={handleConfirmWonDeal}
+                        className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase hover:bg-slate-200 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Archive size={16} /> Apenas Arquivar Oportunidade
+                    </button>
+                    <button 
+                        onClick={() => setIsWonModalOpen(false)}
+                        className="w-full py-3 text-slate-400 font-bold text-[10px] uppercase hover:text-slate-600 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Reabertura (Reverter) */}
+      {isReopenModalOpen && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl relative border border-slate-100 text-center">
+                <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-blue-100">
+                    <History size={40} className="text-blue-600" />
+                </div>
+                
+                <h3 className="text-2xl font-black text-slate-900 italic tracking-tighter uppercase mb-2">Reabrir Negócio</h3>
+                <p className="text-sm font-bold text-slate-500 mb-8 uppercase tracking-widest leading-relaxed">
+                    Deseja reabrir a oportunidade <br/>
+                    <span className="text-slate-900 italic">"{dealToReopen?.title || dealToReopen?.farmName}"</span> <br/>
+                    e movê-la de volta para o <span className="text-blue-600">FUNIL ATIVO</span>?
+                </p>
+
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setIsReopenModalOpen(false)}
+                        className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase hover:bg-slate-200 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={handleConfirmReopenDeal}
+                        className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Check size={16} /> Confirmar Reabertura
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Modal de Motivo da Perda */}
+      {isLossModalOpen && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl relative border border-slate-100">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-black text-slate-900 italic tracking-tighter uppercase">Motivo da Perda</h3>
+                    <button onClick={() => setIsLossModalOpen(false)} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
+                </div>
+                
+                <p className="text-xs font-bold text-slate-500 mb-4 uppercase tracking-widest">
+                    Por que a oportunidade "{dealToMarkAsLost?.title}" foi perdida?
+                </p>
+
+                <textarea 
+                    className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:border-red-500 transition-all shadow-inner mb-4"
+                    placeholder="Descreva o motivo..."
+                    value={lossReason}
+                    onChange={(e) => setLossReason(e.target.value)}
+                    autoFocus
+                />
+
+                {lossFiles.length > 0 && (
+                    <div className="mb-4 space-y-2 max-h-32 overflow-y-auto custom-scrollbar">
+                        {lossFiles.map((f, i) => (
+                            <div key={i} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100">
+                                <span className="text-[10px] font-bold text-slate-600 truncate">{f.name}</span>
+                                <button onClick={() => setLossFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600"><Trash2 size={14} /></button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                <div className="flex gap-2 mb-6">
+                    <button onClick={() => lossCameraInputRef.current?.click()} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-red-600 transition-colors"><Camera size={18} /></button>
+                    <button onClick={() => lossFileInputRef.current?.click()} className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-400 hover:text-red-600 transition-colors"><Paperclip size={18} /></button>
+                    <input type="file" multiple className="hidden" ref={lossFileInputRef} onChange={(e) => e.target.files && setLossFiles(prev => [...prev, ...Array.from(e.target.files!)])} />
+                    <input type="file" accept="image/*" capture="environment" className="hidden" ref={lossCameraInputRef} onChange={(e) => e.target.files && setLossFiles(prev => [...prev, ...Array.from(e.target.files!)])} />
+                </div>
+
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setIsLossModalOpen(false)}
+                        className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase hover:bg-slate-200 transition-colors"
+                        disabled={isSavingLoss}
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={handleConfirmLostDeal}
+                        disabled={!lossReason.trim() || isSavingLoss}
+                        className="flex-1 py-4 bg-red-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                        {isSavingLoss ? <Loader2 size={16} className="animate-spin" /> : <ThumbsDown size={16} />}
+                        Confirmar Perda
+                    </button>
+                </div>
+            </div>
         </div>
       )}
 

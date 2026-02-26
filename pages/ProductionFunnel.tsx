@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useCallback } from 'react';
 import { Deal, Stage, Activity, Client, User, CatalogItem, Visit, Attachment, DealProduct } from '../types';
 import { 
   Plus, X, BarChart3, Trash2, Beef, Package, 
   Phone, Calendar, DollarSign, User as UserIcon, 
   Clock, History, Paperclip, Loader2, 
   MessageSquare, Send, AlertTriangle, Building2,
-  FileText, Camera, ImageIcon, Pencil, Search, UserPlus, Check, Video, ExternalLink
+  FileText, Camera, ImageIcon, Pencil, Search, UserPlus, Check, Video, ExternalLink, FlaskConical
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { KanbanColumn } from '../components/KanbanColumn';
@@ -54,6 +54,7 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editDealData, setEditDealData] = useState<Deal | null>(null);
+  const [activeTab, setActiveTab] = useState<'interaction' | 'formula'>('interaction');
 
   // States para o Modal de Seleção de Cliente
   const [isSelectionModalOpen, setIsSelectionModalOpen] = useState(false);
@@ -83,6 +84,10 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editActFiles, setEditActFiles] = useState<File[]>([]);
   const [isSavingEditAct, setIsSavingEditAct] = useState(false);
+
+  // States para Reversão (Reabrir no Funil de Vendas)
+  const [isReopenModalOpen, setIsReopenModalOpen] = useState(false);
+  const [dealToReopen, setDealToReopen] = useState<Deal | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -100,6 +105,29 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
     setIsSelectionModalOpen(false);
     openDealModalForClient(client);
   };
+
+  const handleReopenDeal = useCallback((deal: Deal) => {
+    setDealToReopen(deal);
+    setIsReopenModalOpen(true);
+  }, []);
+
+  const handleConfirmReopenDeal = useCallback(() => {
+    if (!dealToReopen) return;
+    // Mover de volta para o funil de vendas (pip_principal)
+    onUpdateDeal({ 
+        ...dealToReopen, 
+        status: 'Open', 
+        pipelineId: 'pip_principal',
+        stageId: 'stg_1', // Volta para a primeira etapa de vendas ou mantém se tiver stg_
+        updatedAt: new Date().toISOString(),
+        customAttributes: {
+            ...(dealToReopen.customAttributes || {}),
+            transferredFromSales: false // Remove a flag de transferência
+        }
+    });
+    setIsReopenModalOpen(false);
+    setDealToReopen(null);
+  }, [dealToReopen, onUpdateDeal]);
 
   const handleCreateAndSelectClient = async () => {
     if (!newClientData.name || !newClientData.farmName) return;
@@ -393,6 +421,7 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
              onDealClick={handleEditDealClick}
              onMoveDeal={(id, sid) => onUpdateDeal({...deals.find(d => d.id === id)!, stageId: sid})}
              onDealUpdate={onUpdateDeal}
+             onRevert={handleReopenDeal}
            />
         ))}
       </div>
@@ -570,80 +599,119 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
              <div className="flex-1 flex overflow-hidden flex-col md:flex-row bg-[#f8fafc]">
                 {/* COLUNA ESQUERDA: REGISTRO DE CAMPO (Aumentada e Melhorada UX) */}
                 <div className="w-full md:w-[400px] border-r border-slate-200 p-6 flex flex-col bg-white z-10 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
-                    <h4 className="text-xs font-black uppercase text-slate-800 mb-4 flex items-center gap-2">
-                        <MessageSquare size={16} className="text-blue-600" /> Registro de Campo
-                    </h4>
-                    
-                    {/* Metadados: Data e Tipo */}
-                    <div className="flex flex-col gap-2 mb-4">
-                        <input 
-                            type="datetime-local" 
-                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-zorion-500 transition-colors"
-                            value={interactionDate}
-                            onChange={(e) => setInteractionDate(e.target.value)}
-                        />
-                        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
-                            {(['Task', 'Call', 'Meeting', 'Whatsapp'] as const).map(t => (
-                                <button key={t} onClick={() => setInteractionType(t)} className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg transition-all ${interactionType === t ? 'bg-white text-zorion-900 shadow-sm scale-105' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Novo Campo: Produto Específico da Visita (Solicitado pelo Usuário) */}
-                    <div className="mb-4">
-                        <select 
-                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none focus:border-zorion-500 transition-colors"
-                            value={interactionProduct}
-                            onChange={handleInteractionProductChange}
+                    <div className="flex gap-2 mb-6 border-b border-slate-50 pb-4">
+                        <button 
+                            onClick={() => setActiveTab('interaction')}
+                            className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'interaction' ? 'bg-blue-50 text-blue-600 border border-blue-100' : 'text-slate-400 hover:text-slate-600'}`}
                         >
-                            <option value="">Produto Utilizado (Opcional)</option>
-                            {catalog.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                            <option value="NEW_PRODUCT" className="text-zorion-600 font-black">+ CADASTRAR NOVO PRODUTO</option>
-                        </select>
+                            <MessageSquare size={14} /> Interação
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('formula')}
+                            className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all flex items-center justify-center gap-2 ${activeTab === 'formula' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            <FlaskConical size={14} /> Fórmula
+                        </button>
                     </div>
 
-                    {/* Área de Texto Expandida e Limpa */}
-                    <textarea 
-                        value={quickNote} 
-                        onChange={e => setQuickNote(e.target.value)} 
-                        className="w-full flex-1 min-h-[140px] p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium outline-none focus:border-zorion-500 focus:bg-white transition-all shadow-inner resize-none mb-4" 
-                        placeholder={`Descreva o que foi observado ou acordado...`} 
-                    />
-                    
-                    {/* Lista de Arquivos Selecionados */}
-                    {quickFiles.length > 0 && (
-                      <div className="mb-4 space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1 bg-slate-50 p-2 rounded-xl border border-slate-100">
-                         <p className="text-[9px] font-black uppercase text-slate-400 px-1 mb-1">Anexos prontos:</p>
-                         {quickFiles.map((f, i) => (
-                           <div key={i} className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-100 shadow-sm">
-                              <div className="flex items-center gap-2 overflow-hidden">
-                                 {f.type.startsWith('image/') ? <ImageIcon size={14} className="text-purple-500 shrink-0" /> : <Paperclip size={14} className="text-slate-400 shrink-0" />}
-                                 <span className="text-[10px] font-bold text-slate-600 truncate">{f.name}</span>
+                    {activeTab === 'interaction' ? (
+                        <>
+                            <h4 className="text-xs font-black uppercase text-slate-800 mb-4 flex items-center gap-2">
+                                <MessageSquare size={16} className="text-blue-600" /> Registro de Campo
+                            </h4>
+                            
+                            {/* Metadados: Data e Tipo */}
+                            <div className="flex flex-col gap-2 mb-4">
+                                <input 
+                                    type="datetime-local" 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-zorion-500 transition-colors"
+                                    value={interactionDate}
+                                    onChange={(e) => setInteractionDate(e.target.value)}
+                                />
+                                <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
+                                    {(['Task', 'Call', 'Meeting', 'Whatsapp'] as const).map(t => (
+                                        <button key={t} onClick={() => setInteractionType(t)} className={`flex-1 py-2 text-[9px] font-black uppercase rounded-lg transition-all ${interactionType === t ? 'bg-white text-zorion-900 shadow-sm scale-105' : 'text-slate-400 hover:text-slate-600'}`}>{t}</button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Novo Campo: Produto Específico da Visita (Solicitado pelo Usuário) */}
+                            <div className="mb-4">
+                                <select 
+                                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-600 outline-none focus:border-zorion-500 transition-colors"
+                                    value={interactionProduct}
+                                    onChange={handleInteractionProductChange}
+                                >
+                                    <option value="">Produto Utilizado (Opcional)</option>
+                                    {catalog.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                                    <option value="NEW_PRODUCT" className="text-zorion-600 font-black">+ CADASTRAR NOVO PRODUTO</option>
+                                </select>
+                            </div>
+
+                            {/* Área de Texto Expandida e Limpa */}
+                            <textarea 
+                                value={quickNote} 
+                                onChange={e => setQuickNote(e.target.value)} 
+                                className="w-full flex-1 min-h-[140px] p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium outline-none focus:border-zorion-500 focus:bg-white transition-all shadow-inner resize-none mb-4" 
+                                placeholder={`Descreva o que foi observado ou acordado...`} 
+                            />
+                            
+                            {/* Lista de Arquivos Selecionados */}
+                            {quickFiles.length > 0 && (
+                              <div className="mb-4 space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                                 <p className="text-[9px] font-black uppercase text-slate-400 px-1 mb-1">Anexos prontos:</p>
+                                 {quickFiles.map((f, i) => (
+                                   <div key={i} className="flex items-center justify-between bg-white p-2 rounded-xl border border-slate-100 shadow-sm">
+                                      <div className="flex items-center gap-2 overflow-hidden">
+                                         {f.type.startsWith('image/') ? <ImageIcon size={14} className="text-purple-500 shrink-0" /> : <Paperclip size={14} className="text-slate-400 shrink-0" />}
+                                         <span className="text-[10px] font-bold text-slate-600 truncate">{f.name}</span>
+                                      </div>
+                                      <button type="button" onClick={() => setQuickFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-red-300 hover:text-red-500 p-1 transition-colors"><Trash2 size={14} /></button>
+                                   </div>
+                                 ))}
                               </div>
-                              <button type="button" onClick={() => setQuickFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-red-300 hover:text-red-500 p-1 transition-colors"><Trash2 size={14} /></button>
-                           </div>
-                         ))}
-                      </div>
+                            )}
+
+                            {/* Botões Grandes de Mídia */}
+                            <div className="grid grid-cols-2 gap-3 mb-4">
+                                <button type="button" onClick={() => cameraInputRef.current?.click()} className="flex flex-col items-center justify-center p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-500 hover:text-purple-600 hover:bg-purple-50 hover:border-purple-100 transition-all active:scale-95 group">
+                                    <Camera size={24} className="mb-1 group-hover:scale-110 transition-transform"/>
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Câmera</span>
+                                </button>
+                                <button type="button" onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-500 hover:text-zorion-600 hover:bg-emerald-50 hover:border-emerald-100 transition-all active:scale-95 group">
+                                    <Paperclip size={24} className="mb-1 group-hover:scale-110 transition-transform"/>
+                                    <span className="text-[10px] font-black uppercase tracking-widest">Galeria</span>
+                                </button>
+                                
+                                <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileChange} />
+                                <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} />
+                            </div>
+
+                            <Button onClick={handleRegisterInteraction} isLoading={isUploading} className="w-full py-4 rounded-xl text-xs font-black uppercase bg-[#83a697] hover:bg-[#6c8a7c] text-white shadow-lg flex items-center justify-center gap-2 transform active:scale-[0.98] transition-all">
+                                <Send size={16}/> REGISTRAR ATIVIDADE
+                            </Button>
+                        </>
+                    ) : (
+                        <>
+                            <h4 className="text-xs font-black uppercase text-slate-800 mb-4 flex items-center gap-2">
+                                <FlaskConical size={16} className="text-emerald-600" /> Fórmula da Ração
+                            </h4>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-4 tracking-widest leading-tight">
+                                Defina a composição da ração exclusiva para este cliente ativo.
+                            </p>
+                            <textarea 
+                                value={editDealData.feedFormula || ''} 
+                                onChange={e => setEditDealData({...editDealData, feedFormula: e.target.value})} 
+                                className="w-full flex-1 min-h-[300px] p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium outline-none focus:border-emerald-500 focus:bg-white transition-all shadow-inner resize-none mb-4" 
+                                placeholder="Ex: 60% Milho, 20% Farelo de Soja, 15% Núcleo, 5% Calcário..." 
+                            />
+                            <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
+                                <p className="text-[10px] font-black text-emerald-700 uppercase leading-relaxed">
+                                    A fórmula é salva automaticamente ao salvar as alterações do cliente.
+                                </p>
+                            </div>
+                        </>
                     )}
-
-                    {/* Botões Grandes de Mídia */}
-                    <div className="grid grid-cols-2 gap-3 mb-4">
-                        <button type="button" onClick={() => cameraInputRef.current?.click()} className="flex flex-col items-center justify-center p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-500 hover:text-purple-600 hover:bg-purple-50 hover:border-purple-100 transition-all active:scale-95 group">
-                            <Camera size={24} className="mb-1 group-hover:scale-110 transition-transform"/>
-                            <span className="text-[10px] font-black uppercase tracking-widest">Câmera</span>
-                        </button>
-                        <button type="button" onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center justify-center p-4 bg-slate-50 border border-slate-200 rounded-2xl text-slate-500 hover:text-zorion-600 hover:bg-emerald-50 hover:border-emerald-100 transition-all active:scale-95 group">
-                            <Paperclip size={24} className="mb-1 group-hover:scale-110 transition-transform"/>
-                            <span className="text-[10px] font-black uppercase tracking-widest">Galeria</span>
-                        </button>
-                        
-                        <input type="file" multiple className="hidden" ref={fileInputRef} onChange={handleFileChange} />
-                        <input type="file" accept="image/*" capture="environment" className="hidden" ref={cameraInputRef} onChange={handleFileChange} />
-                    </div>
-
-                    <Button onClick={handleRegisterInteraction} isLoading={isUploading} className="w-full py-4 rounded-xl text-xs font-black uppercase bg-[#83a697] hover:bg-[#6c8a7c] text-white shadow-lg flex items-center justify-center gap-2 transform active:scale-[0.98] transition-all">
-                        <Send size={16}/> REGISTRAR ATIVIDADE
-                    </Button>
                 </div>
 
                 {/* COLUNA DIREITA: PRODUTOS E HISTÓRICO (Agora tudo rola junto) */}
@@ -890,6 +958,39 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
                  </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Reabertura (Reverter para Vendas) */}
+      {isReopenModalOpen && (
+        <div className="fixed inset-0 z-[1200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2rem] w-full max-w-md p-8 shadow-2xl relative border border-slate-100 text-center">
+                <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6 border border-blue-100">
+                    <History size={40} className="text-blue-600" />
+                </div>
+                
+                <h3 className="text-2xl font-black text-slate-900 italic tracking-tighter uppercase mb-2">Reverter Oportunidade</h3>
+                <p className="text-sm font-bold text-slate-500 mb-8 uppercase tracking-widest leading-relaxed">
+                    Deseja reverter este cliente para o <br/>
+                    <span className="text-blue-600">FUNIL DE VENDAS</span>? <br/>
+                    <span className="text-[10px] text-slate-400 mt-2 block">(Isso o removerá deste funil técnico e o tornará uma oportunidade ativa novamente)</span>
+                </p>
+
+                <div className="flex gap-3">
+                    <button 
+                        onClick={() => setIsReopenModalOpen(false)}
+                        className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase hover:bg-slate-200 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={handleConfirmReopenDeal}
+                        className="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Check size={16} /> Confirmar Reversão
+                    </button>
+                </div>
+            </div>
         </div>
       )}
 

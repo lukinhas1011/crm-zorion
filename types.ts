@@ -103,6 +103,7 @@ export interface Deal extends BaseDocument {
     plantContact?: string;
     contactPhone?: string;
   };
+  feedFormula?: string;
 }
 
 export interface Attachment {

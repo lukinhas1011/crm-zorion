@@ -13,12 +13,15 @@ interface KanbanColumnProps {
   onDealClick: (deal: Deal) => void;
   showCreator?: boolean;
   onDealUpdate?: (deal: Deal) => void;
+  onWon?: (deal: Deal) => void;
+  onLost?: (deal: Deal) => void;
+  onRevert?: (deal: Deal) => void;
 }
 
 const COLORS = ['bg-zorion-600', 'bg-blue-600', 'bg-indigo-600', 'bg-emerald-600', 'bg-amber-600'];
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({ 
-  stage, deals, activities, index, onMoveDeal, onDealClick, showCreator = false, onDealUpdate
+  stage, deals, activities, index, onMoveDeal, onDealClick, showCreator = false, onDealUpdate, onWon, onLost, onRevert
 }) => {
   const totalValue = deals.reduce((sum, d) => sum + d.value, 0);
   const colorClass = COLORS[index % COLORS.length];
@@ -61,6 +64,9 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
               onDragStart={(e) => e.dataTransfer.setData('dealId', deal.id)}
               showCreator={showCreator}
               onUpdate={onDealUpdate}
+              onWon={onWon}
+              onLost={onLost}
+              onRevert={onRevert}
             />
           ))
         ) : (
