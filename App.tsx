@@ -18,6 +18,8 @@ import ProductionFunnel from './pages/ProductionFunnel';
 import Nutrition from './pages/Nutrition';
 import PriceTablePage from './pages/PriceTablePage';
 import FeedbackList from './pages/FeedbackList';
+import Profile from './pages/Profile';
+import IntegrationTest from './pages/IntegrationTest';
 import { User, Client, Visit, CatalogItem, Deal, Stage, Pipeline, Activity, Language, Translator } from './types';
 import { Beef, Loader2 } from 'lucide-react';
 
@@ -400,6 +402,8 @@ const AppContent: React.FC = () => {
       case 'visits': return <Visits visits={visits} clients={clients} onSelectClient={handleSelectClient} onUpdateVisit={handleUpdateVisit} onDeleteVisit={handleDeleteVisit} />;
       case 'nutrition': return <Nutrition />;
       case 'feedback_list': return <FeedbackList />;
+      case 'profile': return <Profile user={user} onUpdateUser={setUser} />;
+      case 'integration_test': return <IntegrationTest />;
       default: return <Dashboard clients={clients} visits={visits} user={user} onNavigate={handleNavigate} onSelectClient={handleSelectClient} deals={deals} activities={activities} {...commonProps} />;
     }
   };

@@ -281,15 +281,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
         </nav>
 
         <div className="p-6 border-t border-white/5 bg-zorion-950/40">
-          <div className="flex items-center gap-4 mb-5">
-            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-zorion-700 to-zorion-900 text-zorion-100 flex items-center justify-center font-black border border-white/10 shadow-lg">
+          <button onClick={() => onNavigate('profile')} className="flex items-center gap-4 mb-5 w-full text-left group hover:bg-white/5 p-2 rounded-xl transition-all -ml-2">
+            <div className="h-12 w-12 rounded-2xl bg-gradient-to-br from-zorion-700 to-zorion-900 text-zorion-100 flex items-center justify-center font-black border border-white/10 shadow-lg group-hover:scale-105 transition-transform">
               {user.name.charAt(0)}
             </div>
             <div className="overflow-hidden">
-              <p className="text-sm font-bold truncate text-white tracking-tight">{user.name}</p>
-              <p className="text-[10px] text-zorion-500 truncate font-bold uppercase tracking-widest">{user.role}</p>
+              <p className="text-sm font-bold truncate text-white tracking-tight group-hover:text-zorion-300 transition-colors">{user.name}</p>
+              <p className="text-[10px] text-zorion-500 truncate font-bold uppercase tracking-widest group-hover:text-zorion-400 transition-colors">{user.role}</p>
             </div>
-          </div>
+          </button>
           <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-red-400 py-3 rounded-xl hover:bg-red-950/20 transition-all border border-transparent hover:border-red-900/30">
             <LogOut size={14} /> {t('nav.logout')}
           </button>
@@ -314,11 +314,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
                     <Coins size={18} />
                  </button>
              )}
-             <div className="text-right">
-                <p className="text-[10px] font-black text-slate-800 tracking-tight leading-none">{user.name.split(' ')[0]}</p>
-                <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">Online</p>
-             </div>
-             <div className="h-8 w-8 rounded-lg bg-zorion-900 text-white border border-zorion-800 flex items-center justify-center font-black text-xs">{user.name.charAt(0)}</div>
+             <button onClick={() => onNavigate('profile')} className="flex items-center gap-3 text-right group">
+                <div>
+                   <p className="text-[10px] font-black text-slate-800 tracking-tight leading-none group-hover:text-zorion-600">{user.name.split(' ')[0]}</p>
+                   <p className="text-[8px] text-slate-400 font-bold uppercase tracking-tighter">Online</p>
+                </div>
+                <div className="h-8 w-8 rounded-lg bg-zorion-900 text-white border border-zorion-800 flex items-center justify-center font-black text-xs group-hover:bg-zorion-800 transition-colors">{user.name.charAt(0)}</div>
+             </button>
          </div>
       </div>
 
@@ -384,6 +386,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
                     <div className="h-14 w-14 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center shadow-sm border border-purple-200"><Dna size={28} /></div>
                     <div><h4 className="font-black text-slate-900 text-sm">Dr. Zeta</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Veterinária</p></div>
                  </a>
+
+                 {/* DIAGNÓSTICO WHATSAPP (Visível Desktop e Mobile) */}
+                 <button onClick={() => handleMobileMenuNavigation('integration_test')} className="p-6 bg-green-50 border border-green-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
+                    <div className="h-14 w-14 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center shadow-sm border border-green-200"><MessageSquare size={28} /></div>
+                    <div><h4 className="font-black text-slate-900 text-sm">WhatsApp</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Diagnóstico</p></div>
+                 </button>
               </div>
               
               {/* Opção Mobile para Reportar Bug */}

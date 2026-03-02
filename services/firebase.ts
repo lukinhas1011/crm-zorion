@@ -31,8 +31,10 @@ const configEstoqueZorion = {
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const storage = getStorage(app);
-export const analytics = getAnalytics(app);
 export const auth = getAuth(app);
+
+// Analytics only on client side
+export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
 
 // Inicialização Secundária (Estoque)
 // O segundo parâmetro "estoqueZorionApp" é essencial para o Firebase gerenciar duas conexões ao mesmo tempo

@@ -7,7 +7,7 @@ import {
   User as UserIcon, Clock, MapPin, DollarSign, History, TrendingUp, Info,
   Phone, ChevronRight, Trello, BarChart3, LayoutGrid, Mail, Send, Users,
   Paperclip, Video, ImageIcon, FileText, Camera, Package, Briefcase, CalendarCheck,
-  Archive, Trash2, ExternalLink, AlertTriangle, Coins
+  Archive, Trash2, ExternalLink, AlertTriangle, Coins, MessageCircle
 } from 'lucide-react';
 import { Button } from '../components/Button';
 import { summarizeVisitAudio } from '../services/geminiService';
@@ -351,13 +351,21 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   </div>
 
                   <div className="space-y-4">
-                    {timelineItems.map((item: any) => (
+                    {timelineItems.map((item: any) => {
+                        let borderColor = 'bg-blue-500';
+                        if (item.itemType === 'visit') borderColor = 'bg-emerald-500';
+                        if (item.type === 'Whatsapp') borderColor = 'bg-green-500';
+
+                        return (
                         <div key={item.id} className="bg-white p-6 rounded-[2.5rem] border border-slate-100 flex gap-6 relative group overflow-hidden">
-                            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${item.itemType === 'visit' ? 'bg-emerald-500' : 'bg-blue-500'}`}></div>
+                            <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${borderColor}`}></div>
                             <div className="flex-1 min-w-0">
                                 <div className="flex justify-between items-start mb-2">
                                     <div className="flex flex-col">
-                                        <h4 className="font-black text-slate-800 text-lg italic leading-tight">{item.itemType === 'visit' ? item.purpose : item.title}</h4>
+                                        <div className="flex items-center gap-2">
+                                            {item.type === 'Whatsapp' && <MessageCircle size={16} className="text-green-500" />}
+                                            <h4 className="font-black text-slate-800 text-lg italic leading-tight">{item.itemType === 'visit' ? item.purpose : item.title}</h4>
+                                        </div>
                                         {item.product && (
                                             <span className="text-[10px] font-black text-zorion-600 uppercase tracking-widest mt-1 flex items-center gap-1">
                                                 <Package size={10} /> {item.product}
@@ -371,7 +379,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                         )}
                                     </div>
                                 </div>
-                                <p className="text-xs font-medium text-slate-600 leading-relaxed">{item.transcript || item.description}</p>
+                                <p className="text-xs font-medium text-slate-600 leading-relaxed whitespace-pre-wrap">{item.transcript || item.description}</p>
                                 {item.attachments?.length > 0 && (
                                     <div className="flex flex-wrap gap-2 mt-3">
                                         {item.attachments.map((att: Attachment) => (
@@ -387,7 +395,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                 )}
                             </div>
                         </div>
-                    ))}
+                    )})}
                   </div>
                 </div>
            )}

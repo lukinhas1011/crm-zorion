@@ -13,6 +13,7 @@ export type Translator = (key: string) => string;
 export interface User extends BaseDocument {
   name: string;
   email?: string;
+  phone?: string; // Adicionado para integração WhatsApp
   role: 'Veterinário' | 'Técnico' | 'Admin' | 'Engenheiro Agrônomo';
   active: boolean;
   password?: string;

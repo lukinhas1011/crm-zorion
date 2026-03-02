@@ -3,7 +3,17 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { Ingredient, DietRequirement, DietRecommendation } from '../types';
 
 // Inicialização segura usando a chave de ambiente
-const getAiClient = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
+const getAiClient = () => {
+  let apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY || '';
+  
+  // Clean the key: remove whitespace and surrounding quotes
+  apiKey = apiKey.trim().replace(/^["']|["']$/g, '');
+
+  if (!apiKey) {
+    throw new Error("Neither GEMINI_API_KEY nor API_KEY is set in environment variables.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 export const generateNutritionPlan = async (
   requirements: DietRequirement,
