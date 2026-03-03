@@ -392,6 +392,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
                     <div className="h-14 w-14 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center shadow-sm border border-green-200"><MessageSquare size={28} /></div>
                     <div><h4 className="font-black text-slate-900 text-sm">WhatsApp</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Diagnóstico</p></div>
                  </button>
+
+                 {/* SIMULADOR WHATSAPP (Visível Desktop e Mobile para Lucas e Rigolin) */}
+                 {canManageFeedback && (
+                   <button onClick={() => handleMobileMenuNavigation('whatsapp_simulator')} className="p-6 bg-emerald-50 border border-emerald-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
+                       <div className="h-14 w-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shadow-sm border border-emerald-200"><BrainCircuit size={28} /></div>
+                       <div><h4 className="font-black text-slate-900 text-sm">Simulador</h4><p className="text-[10px] font-bold text-slate-400 uppercase">WhatsApp IA</p></div>
+                   </button>
+                 )}
               </div>
               
               {/* Opção Mobile para Reportar Bug */}

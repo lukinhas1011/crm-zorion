@@ -51,19 +51,42 @@ const WeatherWidget = ({ t = (k:string) => k }: { t?: Translator }) => {
   const [error, setError] = useState(false);
 
   useEffect(() => {
+    const cachedWeather = localStorage.getItem('zorion_weather_cache');
+    const cachedLocation = localStorage.getItem('zorion_location_cache');
+    const cacheTime = localStorage.getItem('zorion_weather_timestamp');
+    
+    // Cache válido por 1 hora (3600000 ms)
+    if (cachedWeather && cachedLocation && cacheTime && (Date.now() - Number(cacheTime) < 3600000)) {
+        setWeather(JSON.parse(cachedWeather));
+        setLocationName(cachedLocation);
+        setLoading(false);
+        return;
+    }
+
     if (!navigator.geolocation) { setError(true); setLoading(false); return; }
+    
     navigator.geolocation.getCurrentPosition(
       async (position) => {
         try {
           const { latitude, longitude } = position.coords;
+          let locName = 'Sua Localização';
+          
           try {
             const geoRes = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
             const geoData = await geoRes.json();
-            setLocationName(geoData.address.city || geoData.address.town || geoData.address.village || 'Campo Remoto');
-          } catch (e) { setLocationName('Sua Localização'); }
+            locName = geoData.address.city || geoData.address.town || geoData.address.village || 'Campo Remoto';
+            setLocationName(locName);
+          } catch (e) { setLocationName(locName); }
+
           const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=auto`);
           const weatherData = await weatherRes.json();
           setWeather(weatherData);
+
+          // Salvar Cache
+          localStorage.setItem('zorion_weather_cache', JSON.stringify(weatherData));
+          localStorage.setItem('zorion_location_cache', locName);
+          localStorage.setItem('zorion_weather_timestamp', String(Date.now()));
+
         } catch (err) { setError(true); } finally { setLoading(false); }
       },
       () => { setError(true); setLoading(false); }

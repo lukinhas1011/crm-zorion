@@ -20,6 +20,7 @@ import PriceTablePage from './pages/PriceTablePage';
 import FeedbackList from './pages/FeedbackList';
 import Profile from './pages/Profile';
 import IntegrationTest from './pages/IntegrationTest';
+import WhatsAppSimulator from './pages/WhatsAppSimulator';
 import { User, Client, Visit, CatalogItem, Deal, Stage, Pipeline, Activity, Language, Translator } from './types';
 import { Beef, Loader2 } from 'lucide-react';
 
@@ -130,6 +131,12 @@ const AppContent: React.FC = () => {
 
   // Detecção de Localização para Idioma
   useEffect(() => {
+    const cachedLang = localStorage.getItem('zorion_lang_cache');
+    if (cachedLang) {
+        setLanguage(cachedLang as Language);
+        return;
+    }
+
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(async (position) => {
         try {
@@ -147,7 +154,10 @@ const AppContent: React.FC = () => {
               
               if (spanishSpeaking.includes(cc)) {
                 setLanguage('es');
+                localStorage.setItem('zorion_lang_cache', 'es');
                 console.log("Idioma alterado para Espanhol com base na localização:", cc);
+              } else {
+                localStorage.setItem('zorion_lang_cache', 'pt-BR');
               }
             }
           } catch (fetchError) {
@@ -279,7 +289,7 @@ const AppContent: React.FC = () => {
       unsubClients(); unsubVisits(); unsubCatalog(); unsubPipelines(); 
       unsubStages(); unsubDeals(); unsubActivities();
     };
-  }, [user, isAdmin, clients.length, isMaster]);
+  }, [user, isAdmin, isMaster]); // REMOVIDO clients.length para evitar loop de reconexão
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -404,6 +414,7 @@ const AppContent: React.FC = () => {
       case 'feedback_list': return <FeedbackList />;
       case 'profile': return <Profile user={user} onUpdateUser={setUser} />;
       case 'integration_test': return <IntegrationTest />;
+      case 'whatsapp_simulator': return <WhatsAppSimulator />;
       default: return <Dashboard clients={clients} visits={visits} user={user} onNavigate={handleNavigate} onSelectClient={handleSelectClient} deals={deals} activities={activities} {...commonProps} />;
     }
   };

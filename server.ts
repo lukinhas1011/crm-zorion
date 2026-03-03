@@ -81,73 +81,57 @@ async function startServer() {
     res.json({ status: 'ok' });
   });
 
-  // 5. Rota de Teste Temporária (Simulação de Fluxo)
-  app.get('/api/test/whatsapp-flow', async (req, res) => {
-    console.log('[Test Route] Iniciando simulação de fluxo WhatsApp...');
-    try {
-        const usersRef = collection(db, 'users');
-        const usersSnap = await getDocs(usersRef);
-        let targetUser = null;
-        
-        usersSnap.forEach(doc => {
-            const data = doc.data();
-            if (data.email === 'lrosadamaia64@gmail.com' || (data.name && data.name.includes('Lucas'))) {
-                targetUser = { id: doc.id, ...data };
+    // 5. Rota de Teste Temporária (Simulação de Fluxo)
+    app.post('/api/test/whatsapp-flow', async (req, res) => {
+        console.log('[Test Route] Iniciando simulação de fluxo WhatsApp...');
+        try {
+            const { phone, message } = req.body;
+            
+            // Se não vier telefone no body, tenta achar o Lucas
+            let targetPhone = phone;
+            let targetUser = null;
+
+            if (!targetPhone) {
+                const usersRef = collection(db, 'users');
+                const usersSnap = await getDocs(usersRef);
+                
+                usersSnap.forEach(doc => {
+                    const data = doc.data();
+                    if (data.email === 'lrosadamaia64@gmail.com' || (data.name && data.name.includes('Lucas'))) {
+                        targetUser = { id: doc.id, ...data };
+                    }
+                });
+
+                if (targetUser) {
+                    targetPhone = targetUser.phone || '5544998561614';
+                } else {
+                    targetPhone = '5544998561614'; // Fallback total
+                }
             }
-        });
 
-        if (!targetUser) {
-            const allUsers = usersSnap.docs.map(d => ({id: d.id, name: d.data().name, email: d.data().email}));
-            return res.status(404).json({ error: 'Usuário Lucas não encontrado', availableUsers: allUsers });
+            // Payload Simulado
+            const testPayload = {
+                phone: targetPhone,
+                text: {
+                    message: message || "Visita realizada na fazenda Rancho São Fabiano. O gado está com bom ganho de peso. Recomendo manter a dieta."
+                }
+            };
+
+            console.log('[Test Route] Payload:', testPayload);
+
+            // Executar Processamento
+            processWhatsAppMessage(testPayload).catch(err => console.error('[Test Route Async Error]', err));
+
+            res.json({ 
+                message: 'Simulação iniciada. Verifique os logs.', 
+                payload: testPayload 
+            });
+    
+        } catch (error) {
+            console.error('[Test Route Error]', error);
+            res.status(500).json({ error: String(error) });
         }
-
-        // AUTO-FIX: Se não tiver telefone, atualiza para um de teste
-        if (!targetUser.phone) {
-            console.log(`[Test Route] Usuário ${targetUser.name} sem telefone. Atualizando para 5544998561614...`);
-            const userRef = doc(db, 'users', targetUser.id);
-            await updateDoc(userRef, { phone: '5544998561614' });
-            targetUser.phone = '5544998561614'; // Atualiza objeto local
-        }
-
-        // Buscar Cliente
-        const clientsRef = collection(db, 'clients');
-        let clientsQuery;
-        if (targetUser.role === 'Admin') {
-            clientsQuery = query(clientsRef);
-        } else {
-            clientsQuery = query(clientsRef, where('assignedTechnicianIds', 'array-contains', targetUser.id));
-        }
-        const clientsSnap = await getDocs(clientsQuery);
-
-        if (clientsSnap.empty) {
-            return res.status(404).json({ error: 'Nenhum cliente encontrado para este usuário', userId: targetUser.id });
-        }
-
-        const client = clientsSnap.docs[0].data();
-        
-        // Payload Simulado
-        const testPayload = {
-            phone: targetUser.phone,
-            text: {
-                message: `Visita realizada na fazenda ${client.farmName}. O gado está com bom ganho de peso, cerca de 1.2kg/dia. O cliente ${client.name} gostou do suplemento novo. Recomendo manter a dieta.`
-            }
-        };
-
-        // Executar Processamento (Async para não travar a resposta HTTP se demorar muito, mas aqui queremos ver o log)
-        processWhatsAppMessage(testPayload).catch(err => console.error('[Test Route Async Error]', err));
-
-        res.json({ 
-            message: 'Simulação iniciada. Verifique os logs do servidor.', 
-            user: targetUser.name, 
-            client: client.name,
-            payload: testPayload 
-        });
-
-    } catch (error) {
-        console.error('[Test Route Error]', error);
-        res.status(500).json({ error: String(error) });
-    }
-  });
+    });
 
   // --- FIM ROTAS API ---
 
