@@ -6,9 +6,8 @@ admin.initializeApp();
 const db = admin.firestore();
 
 // --- CONFIGURAÇÃO ---
-// Para configurar a chave do Gemini no Firebase Functions:
-// firebase functions:config:set gemini.key="SUA_CHAVE_AQUI"
-const GEMINI_API_KEY = functions.config().gemini?.key || process.env.GEMINI_API_KEY;
+// A chave é carregada automaticamente do arquivo .env na pasta functions
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // --- TIPOS ---
 interface WhatsAppPayload {
