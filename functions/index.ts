@@ -137,7 +137,7 @@ async function processWhatsAppMessage(payload: WhatsAppPayload) {
             config: { responseMimeType: 'application/json' }
         });
         
-        let jsonStr = response.text();
+        let jsonStr = response.text;
         if (!jsonStr) throw new Error("Empty response");
         jsonStr = jsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
         result = JSON.parse(jsonStr);
@@ -237,8 +237,18 @@ export const whatsappWebhook = functions.https.onRequest(async (req, res) => {
   }
 
   if (req.method === 'POST') {
-    res.status(200).send('OK'); // Resposta rápida para o Twilio não dar timeout
-    await processWhatsAppMessage(req.body);
+    // Retornar XML (TwiML) IMEDIATAMENTE para o Twilio não dar erro 12200
+    res.set('Content-Type', 'text/xml');
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    
+    // Processar em segundo plano (após a resposta)
+    // Nota: Em Cloud Functions 2nd Gen ou com concorrência, isso pode ser interrompido.
+    // Mas para testes rápidos e 1st Gen costuma funcionar se for rápido.
+    try {
+        await processWhatsAppMessage(req.body);
+    } catch (err) {
+        console.error("Erro no processamento pós-resposta:", err);
+    }
     return;
   }
 

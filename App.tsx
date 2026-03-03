@@ -215,7 +215,12 @@ const AppContent: React.FC = () => {
         if (isAdmin) {
           setClients(allClients);
         } else {
-          setClients(allClients.filter(c => c.assignedTechnicianId === user.id || (c.assignedTechnicianIds && c.assignedTechnicianIds.includes(user.id))));
+          // Filtra clientes atribuídos ao usuário logado (suporte a legado e múltipla atribuição)
+          setClients(allClients.filter(c => {
+             const isLegacyOwner = c.assignedTechnicianId === user.id;
+             const isMultiOwner = c.assignedTechnicianIds?.includes(user.id);
+             return isLegacyOwner || isMultiOwner;
+          }));
         }
       });
 
@@ -270,7 +275,11 @@ const AppContent: React.FC = () => {
           setDeals(allDeals);
         } else {
           // CORREÇÃO: Permite ver deals criados pelo usuário OU deals pertencentes aos clientes do usuário (mesmo que criados por admin)
-          setDeals(allDeals.filter(d => d.creatorId === user.id || clients.some(c => c.id === d.clientId)));
+          setDeals(allDeals.filter(d => {
+             const isCreator = d.creatorId === user.id;
+             const isClientOwner = clients.some(c => c.id === d.clientId);
+             return isCreator || isClientOwner;
+          }));
         }
       });
 

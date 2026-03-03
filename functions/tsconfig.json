@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "noImplicitReturns": true,
+    "noUnusedLocals": true,
+    "outDir": "lib",
+    "sourceMap": true,
+    "strict": true,
+    "target": "es2017",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true
+  },
+  "compileOnSave": true,
+  "include": [
+    "./index.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "../**",
+    "../App.tsx",
+    "../index.tsx",
+    "../vite.config.ts",
+    "../components/**",
+    "../pages/**",
+    "../services/**"
+  ]
+}
