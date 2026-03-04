@@ -28,7 +28,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
 
   return (
     <div 
-      className="flex flex-col w-full md:w-[300px] md:min-w-[300px] h-full max-h-full md:border-r border-slate-200 bg-transparent md:bg-slate-100/30 flex-shrink-0 animate-fade-in"
+      className="flex flex-col w-[85vw] md:w-[300px] md:min-w-[300px] h-full max-h-full md:border-r border-slate-200 bg-transparent md:bg-slate-100/30 flex-shrink-0 animate-fade-in"
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         const id = e.dataTransfer.getData('dealId');
@@ -47,13 +47,16 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
       </div>
 
       {/* Resumo Mobile (Opcional, já que temos as abas, mas bom para contexto se necessário) */}
-      <div className="md:hidden px-4 py-2 flex justify-between items-center bg-slate-50 border-b border-slate-200 mb-2">
-         <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{deals.length} Oportunidades</span>
-         <span className="text-[10px] font-black text-slate-800">Total: R$ {totalValue.toLocaleString('pt-BR', { notation: 'compact' })}</span>
+      <div className="md:hidden px-3 py-2 flex justify-between items-center bg-slate-50 border-b border-slate-200 mb-2 rounded-xl mx-2 mt-2">
+         <div className="flex items-center gap-2">
+            <div className={`h-2 w-2 rounded-full ${colorClass}`}></div>
+            <span className="text-[10px] font-black text-slate-800 uppercase tracking-tight">{stage.name}</span>
+         </div>
+         <span className="text-[9px] font-bold text-slate-400">{deals.length}</span>
       </div>
 
       {/* Área de Cards */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar pb-32 md:pb-32">
+      <div className="flex-1 overflow-y-auto p-2 md:p-4 space-y-2 md:space-y-4 custom-scrollbar pb-32 md:pb-32">
         {deals.length > 0 ? (
           deals.map(deal => (
             <DealCard 

@@ -522,18 +522,20 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
 
       <div className="flex-1 flex overflow-hidden">
         {view === 'funnel' ? (
-          <div className="flex-1 flex overflow-x-auto p-4 gap-4">
+          <div className="flex-1 flex overflow-x-auto p-2 md:p-4 gap-2 md:gap-4 snap-x snap-mandatory md:snap-none">
             {FIXED_STAGES.map((stage, idx) => (
-               <KanbanColumn 
-                 key={stage.id} stage={stage} index={idx} 
-                 deals={filteredDeals.filter(d => d.stageId === stage.id)} 
-                 activities={activities}
-                 onDealClick={(d) => { setEditDealData(d); setQuickFiles([]); setIsEditModalOpen(true); }}
-                 onMoveDeal={(id, sid) => onUpdateDeal({...deals.find(d => d.id === id)!, stageId: sid})}
-                 onDealUpdate={onUpdateDeal}
-                 onWon={handleWonDeal}
-                 onLost={handleLostDealClick}
-               />
+               <div key={stage.id} className="snap-center h-full">
+                   <KanbanColumn 
+                     stage={stage} index={idx} 
+                     deals={filteredDeals.filter(d => d.stageId === stage.id)} 
+                     activities={activities}
+                     onDealClick={(d) => { setEditDealData(d); setQuickFiles([]); setIsEditModalOpen(true); }}
+                     onMoveDeal={(id, sid) => onUpdateDeal({...deals.find(d => d.id === id)!, stageId: sid})}
+                     onDealUpdate={onUpdateDeal}
+                     onWon={handleWonDeal}
+                     onLost={handleLostDealClick}
+                   />
+               </div>
             ))}
           </div>
         ) : (

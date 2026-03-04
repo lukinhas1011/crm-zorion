@@ -412,17 +412,19 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
          <Button onClick={handleStartNewDeal} className="bg-zorion-900 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase shadow-lg">Novo cliente</Button>
       </div>
 
-      <div className="flex-1 flex overflow-x-auto p-4 gap-4">
+      <div className="flex-1 flex overflow-x-auto p-2 md:p-4 gap-2 md:gap-4 snap-x snap-mandatory md:snap-none">
         {CAPACITY_STAGES.map((stage, idx) => (
-           <KanbanColumn 
-             key={stage.id} stage={stage} index={idx} 
-             deals={filteredDeals.filter(d => d.stageId === stage.id)} 
-             activities={activities}
-             onDealClick={handleEditDealClick}
-             onMoveDeal={(id, sid) => onUpdateDeal({...deals.find(d => d.id === id)!, stageId: sid})}
-             onDealUpdate={onUpdateDeal}
-             onRevert={handleReopenDeal}
-           />
+           <div key={stage.id} className="snap-center h-full">
+               <KanbanColumn 
+                 stage={stage} index={idx} 
+                 deals={filteredDeals.filter(d => d.stageId === stage.id)} 
+                 activities={activities}
+                 onDealClick={handleEditDealClick}
+                 onMoveDeal={(id, sid) => onUpdateDeal({...deals.find(d => d.id === id)!, stageId: sid})}
+                 onDealUpdate={onUpdateDeal}
+                 onRevert={handleReopenDeal}
+               />
+           </div>
         ))}
       </div>
 
