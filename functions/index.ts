@@ -34,6 +34,81 @@ async function enviarMensagemWhatsApp(to: string, body: string) {
     }
 }
 
+// --- FUNÇÃO AUXILIAR: DOWNLOAD E UPLOAD DE MÍDIA (TWILIO -> FIREBASE) ---
+async function downloadAndUploadMedia(mediaUrl: string): Promise<string | null> {
+    if (!mediaUrl) return null;
+
+    try {
+        console.log(`[Media] Baixando mídia: ${mediaUrl}`);
+        
+        const authHeader = 'Basic ' + Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64');
+        
+        // 1. Tenta fazer a requisição inicial com Auth e SEM seguir redirect automático
+        // Isso é crucial porque o Twilio redireciona para o S3, e se mandarmos o header Auth para o S3, ele rejeita (400 Bad Request).
+        let response = await fetch(mediaUrl, {
+            headers: { 'Authorization': authHeader },
+            redirect: 'manual' 
+        });
+
+        // 2. Se for redirecionamento (301, 302, 307), pega a nova URL e baixa sem auth
+        if (response.status >= 300 && response.status < 400) {
+            const redirectUrl = response.headers.get('location');
+            if (redirectUrl) {
+                console.log(`[Media] Redirecionado para S3/CDN. Baixando conteúdo...`);
+                // Baixa da nova URL (S3) SEM os headers de autenticação do Twilio
+                response = await fetch(redirectUrl); 
+            } else {
+                throw new Error(`Redirecionamento recebido sem header Location.`);
+            }
+        } 
+        // 3. Se não for redirect mas der erro (ex: 401), tenta a URL original sem auth (fallback)
+        else if (!response.ok) {
+            console.log(`[Media] Falha com auth (${response.status}), tentando sem auth...`);
+            response = await fetch(mediaUrl);
+        }
+
+        if (!response.ok) {
+            throw new Error(`Falha final ao baixar mídia: ${response.status} ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        // Detecta extensão pelo Content-Type
+        const contentType = response.headers.get('content-type') || 'application/octet-stream';
+        let ext = 'bin';
+        if (contentType.includes('image/jpeg')) ext = 'jpg';
+        else if (contentType.includes('image/png')) ext = 'png';
+        else if (contentType.includes('audio/ogg')) ext = 'ogg';
+        else if (contentType.includes('audio/mpeg')) ext = 'mp3';
+        else if (contentType.includes('video/mp4')) ext = 'mp4';
+        else if (contentType.includes('application/pdf')) ext = 'pdf';
+
+        // 2. Upload para o Firebase Storage
+        const bucket = admin.storage().bucket();
+        const fileName = `whatsapp-media/${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+        const file = bucket.file(fileName);
+
+        await file.save(buffer, {
+            metadata: { contentType: contentType },
+            public: true
+        });
+
+        // 3. Gerar URL Pública (Assinada de Longa Duração)
+        const [signedUrl] = await file.getSignedUrl({
+            action: 'read',
+            expires: '03-01-2225' 
+        });
+
+        console.log(`[Media] Upload concluído: ${signedUrl}`);
+        return signedUrl;
+
+    } catch (error) {
+        console.error("[Media] Erro no processamento:", error);
+        return mediaUrl; // Retorna a URL original em caso de falha (fallback)
+    }
+}
+
 // --- TIPOS ---
 interface WhatsAppPayload {
   phone?: string;
@@ -71,6 +146,16 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
     else if (payload.video?.videoUrl) mediaUrl = payload.video.videoUrl;
     else mediaUrl = payload.MediaUrl0 || null;
 
+    // --- PROCESSAMENTO DE MÍDIA (TWILIO -> FIREBASE) ---
+    if (mediaUrl) {
+        await updateLog({ step: 'downloading_media', originalUrl: mediaUrl });
+        const newUrl = await downloadAndUploadMedia(mediaUrl);
+        if (newUrl) {
+            mediaUrl = newUrl;
+            await updateLog({ step: 'media_uploaded', newUrl: mediaUrl });
+        }
+    }
+
     if (!rawPhone) {
       console.warn('[WhatsApp] Telefone não identificado.');
       await updateLog({ status: 'error', error: 'Telefone não identificado' });
@@ -97,6 +182,8 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
     if (userSnapshot.empty) {
       console.warn(`[WhatsApp] Usuário não encontrado: ${phone}`);
       await updateLog({ status: 'ignored', reason: `Usuário não encontrado: ${phone}` });
+      // AVISO DE USUÁRIO NÃO CADASTRADO COM O NÚMERO PARA FACILITAR
+      await enviarMensagemWhatsApp(rawPhone, `🚫 Acesso Negado.\n\nO número *${phone}* não está vinculado a nenhum usuário no CRM Zorion.\n\nPeça ao administrador para cadastrar este número exato no seu perfil de usuário.`);
       return;
     }
 
@@ -107,14 +194,16 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
     // AVISO IMEDIATO DE RECEBIMENTO (Feedback para o usuário)
     // Envia apenas se não for uma mensagem de mídia pura sem texto (para evitar spam em uploads múltiplos)
     if (messageText.length > 0) {
-        await enviarMensagemWhatsApp(rawPhone, "🤖 Recebi! Estou analisando sua solicitação...");
+        const firstName = userData.name.split(' ')[0];
+        await enviarMensagemWhatsApp(rawPhone, `Olá ${firstName}. Recebido. ⏳ Estou processando sua solicitação no CRM Zorion.`);
     }
 
     // 4. Buscar Clientes, Pipelines e Estágios
     await updateLog({ step: 'finding_data', userId });
     
     let clientsQuery;
-    if (userData.role === 'Admin' || userData.role === 'Veterinário') {
+    // Lógica de Permissão: Admin/Veterinário vê tudo; Outros só os vinculados
+    if (userData.role === 'Admin' || userData.role === 'Veterinário' || userData.role === 'Master') {
         clientsQuery = db.collection('clients');
     } else {
         clientsQuery = db.collection('clients').where('assignedTechnicianIds', 'array-contains', userId);
@@ -146,6 +235,7 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
     if (clientsList.length === 0) {
       console.warn(`[WhatsApp] Usuário ${userData.name} sem clientes.`);
       await updateLog({ status: 'warning', message: 'Usuário sem clientes vinculados' });
+      await enviarMensagemWhatsApp(rawPhone, "⚠️ Você não tem clientes vinculados à sua conta. Peça ao administrador para atribuir clientes a você.");
       return;
     }
 
@@ -173,17 +263,22 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
       Atue como uma secretária executiva de alto nível do CRM Zorion.
       DATA DE HOJE: ${todayLocale} (ISO: ${todayISO})
       
+      DADOS DO USUÁRIO:
+      - Nome: ${userData.name}
+      - Cargo: ${userData.role} (Se for 'Master', 'Admin' ou 'Veterinário', tem ACESSO TOTAL a todas as abas/funis e clientes. Se for 'Técnico', acesso restrito aos seus clientes.)
+
       DADOS DO SISTEMA:
-      - Técnico: ${userData.name}
       - Texto Original: "${messageText}"
       - Tem Mídia? ${mediaUrl ? 'Sim' : 'Não'}
       - Clientes Disponíveis (ID: Nome - Fazenda): ${JSON.stringify(clientsList.map(c => ({ id: c.id, name: c.name, farm: c.farmName })))}
-      - Pipelines (Funis): ${JSON.stringify(pipelinesList)}
+      - Pipelines (Funis/Abas): ${JSON.stringify(pipelinesList)}
       - Estágios (Colunas): ${JSON.stringify(stagesList)}
       
       OBJETIVO: Interpretar a mensagem e estruturar os dados para o CRM.
       
-      REGRAS DE CLIENTE:
+      REGRAS DE CLIENTE (SEGURANÇA):
+      - O usuário SÓ PODE acessar os clientes listados em "Clientes Disponíveis".
+      - Se ele tentar registrar algo para um cliente que NÃO está na lista, sua resposta (ReplyToUser) deve ser: "❌ Você não tem permissão para acessar o cliente [Nome] ou ele não existe na sua carteira."
       - Identifique o cliente pelo nome. Se já existir, use o ID. Se for novo, preencha "newClientName".
       
       REGRAS DE INTENÇÃO (CRÍTICO):
@@ -201,6 +296,16 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
       5. "Clarification" (Pedir Ajuda):
          - Use se houver dúvida (ex: não sabe se cria um novo card ou atualiza, ou qual funil usar).
          - Pergunte ao usuário o que ele prefere.
+      6. "QueryClient" (Consultar/Ler Dados):
+         - Use quando o usuário perguntar sobre um cliente: "Como está o Ademar?", "Me passe a ficha do Sítio X", "Qual o telefone dele?".
+      7. "UpdateClient" (Editar Cadastro):
+         - Use quando o usuário quiser alterar dados CADASTRAIS: "Mude o telefone do Ademar", "Corrija o nome da fazenda".
+      8. "ScheduleVisit" (Agendar Visita Futura):
+         - Use quando o usuário quiser MARCAR um compromisso futuro: "Agende visita no Ademar para sexta-feira", "Marcar visita amanhã".
+         - A data deve ser futura.
+      9. "CreateTask" (Criar Tarefa/Lembrete):
+         - Use quando o usuário quiser criar uma tarefa na lista "Minhas Tarefas" ou atribuir a alguém: "Lembrar de comprar vacina", "Tarefa: Ligar para o João amanhã", "Crie uma tarefa para o Pedro: Revisar relatório".
+         - Se o usuário mencionar um nome de pessoa para fazer a tarefa (ex: "para o Pedro"), extraia em "assigneeName".
 
       DIRETRIZES DE CONTEÚDO:
       - Description: Transcreva TUDO com detalhes. Ex: "Entregue ração 20/80. Contagem: 150 animais".
@@ -213,7 +318,7 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
 
       SAÍDA JSON OBRIGATÓRIA:
       {
-        "intent": "UpdateDeal" | "NewDeal" | "NewVisit" | "LogActivity" | "Clarification" | "Ignorar",
+        "intent": "UpdateDeal" | "NewDeal" | "NewVisit" | "LogActivity" | "Clarification" | "QueryClient" | "UpdateClient" | "ScheduleVisit" | "CreateTask" | "Ignorar",
         "clientId": "ID ou null",
         "newClientName": "Nome se novo",
         "newFarmName": "Fazenda se nova",
@@ -224,6 +329,8 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
         "value": 0.00,
         "date": "${todayISO}",
         "products": ["Produto Citado"],
+        "clientUpdates": { "phone": "...", "email": "...", "farmName": "...", "name": "..." },
+        "assigneeName": "Nome da pessoa responsável (apenas se mencionado explicitamente)",
         "sentiment": "Positivo" | "Neutro" | "Negativo",
         "replyToUser": "Mensagem de resposta para o WhatsApp"
       }
@@ -233,7 +340,7 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
     try {
         const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
         const response = await ai.models.generateContent({
-            model: 'gemini-flash-latest',
+            model: 'gemini-3-flash-preview',
             contents: prompt,
             config: { responseMimeType: 'application/json' }
         });
@@ -299,7 +406,156 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
 
     const commonAttachments = mediaUrl ? [{ type: 'image', url: mediaUrl, name: 'Mídia WhatsApp' }] : [];
 
-    // Ações baseadas na intenção
+    // --- NOVAS INTENÇÕES: CONSULTA E EDIÇÃO ---
+
+    if (result.intent === 'UpdateClient' && result.clientId) {
+        if (result.clientUpdates && Object.keys(result.clientUpdates).length > 0) {
+            // Filtra apenas campos válidos e não vazios
+            const validUpdates: any = {};
+            if (result.clientUpdates.phone) validUpdates.phone = result.clientUpdates.phone;
+            if (result.clientUpdates.email) validUpdates.email = result.clientUpdates.email;
+            if (result.clientUpdates.farmName) validUpdates.farmName = result.clientUpdates.farmName;
+            if (result.clientUpdates.name) validUpdates.name = result.clientUpdates.name;
+            
+            validUpdates.updatedAt = new Date().toISOString();
+
+            await db.collection('clients').doc(result.clientId).update(validUpdates);
+            await updateLog({ status: 'success', message: 'Cliente Atualizado', updates: validUpdates });
+            await enviarMensagemWhatsApp(rawPhone, result.replyToUser || "✅ Dados do cliente atualizados com sucesso.");
+        } else {
+            await enviarMensagemWhatsApp(rawPhone, "⚠️ Entendi que você quer alterar dados, mas não identifiquei quais. Tente: 'Mude o telefone do Ademar para X'.");
+        }
+        return; // Encerra aqui para UpdateClient
+    }
+
+    if (result.intent === 'QueryClient' && result.clientId) {
+        // 1. Buscar Dados do Cliente
+        const clientDoc = await db.collection('clients').doc(result.clientId).get();
+        const clientData = clientDoc.data();
+
+        // 2. Buscar Último Deal
+        const dealsSnap = await db.collection('deals')
+            .where('clientId', '==', result.clientId)
+            .orderBy('updatedAt', 'desc')
+            .limit(1)
+            .get();
+        const lastDeal = dealsSnap.empty ? null : dealsSnap.docs[0].data();
+        const dealStageName = lastDeal ? (stagesList.find(s => s.id === lastDeal.stageId)?.name || 'Desconhecido') : '-';
+
+        // 3. Buscar Última Visita
+        const visitsSnap = await db.collection('visits')
+            .where('clientId', '==', result.clientId)
+            .orderBy('date', 'desc')
+            .limit(1)
+            .get();
+        const lastVisit = visitsSnap.empty ? null : visitsSnap.docs[0].data();
+
+        // 4. Montar Resposta
+        const responseMsg = `📋 *Ficha do Cliente: ${clientData?.name}*\n` +
+                            `🏠 Fazenda: ${clientData?.farmName || 'N/A'}\n` +
+                            `📞 Tel: ${clientData?.phone || 'N/A'}\n` +
+                            `------------------------------\n` +
+                            `💲 *Último Negócio:*\n` +
+                            `   Fase: ${dealStageName}\n` +
+                            `   Valor: R$ ${lastDeal?.value || 0}\n` +
+                            `   Atualizado em: ${lastDeal ? new Date(lastDeal.updatedAt).toLocaleDateString('pt-BR') : '-'}\n` +
+                            `------------------------------\n` +
+                            `📅 *Última Visita:*\n` +
+                            `   Data: ${lastVisit ? new Date(lastVisit.date).toLocaleDateString('pt-BR') : '-'}\n` +
+                            `   Relato: ${lastVisit?.report ? lastVisit.report.substring(0, 50) + '...' : '-'}`;
+
+        await enviarMensagemWhatsApp(rawPhone, responseMsg);
+        await updateLog({ status: 'success', message: 'Consulta realizada' });
+        return; // Encerra aqui para QueryClient
+    }
+
+    if (result.intent === 'ScheduleVisit') {
+        const scheduledDate = result.date || new Date().toISOString();
+        const newVisit = {
+            clientId: result.clientId,
+            technicianId: userId,
+            date: scheduledDate,
+            report: result.description || "Agendamento via WhatsApp",
+            type: 'Técnica',
+            status: 'Agendada', // Status DIFERENTE de Concluída
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            photos: [],
+            product: '',
+            lot: ''
+        };
+        await db.collection('visits').add(newVisit);
+        
+        const formattedDate = new Date(scheduledDate).toLocaleDateString('pt-BR');
+        await enviarMensagemWhatsApp(rawPhone, `📅 Agendado! Visita marcada para *${formattedDate}* no cliente.`);
+        await updateLog({ status: 'success', message: 'Visita Agendada', data: newVisit });
+        return;
+    }
+
+    if (result.intent === 'CreateTask') {
+        let assignedUserId = userId;
+        let assignedUserName = userData.name;
+        let warningMsg = '';
+
+        // Se houver tentativa de atribuição a terceiros
+        if (result.assigneeName) {
+            const isAdminEmail = (userData.email || '').toLowerCase() === 'l.rigolin@zorionan.com';
+            // Verifica permissão (Admin, Master, Veterinário ou email específico)
+            if (isAdminEmail || userData.role === 'Admin' || userData.role === 'Master' || userData.role === 'Veterinário') {
+                // Busca usuário pelo nome (busca em memória para flexibilidade)
+                const usersSnap = await db.collection('users').get();
+                const targetUser = usersSnap.docs.find(doc => {
+                    const u = doc.data();
+                    const name = (u.name || '').toLowerCase();
+                    const email = (u.email || '').toLowerCase();
+                    const search = result.assigneeName.toLowerCase();
+                    return name.includes(search) || email.includes(search);
+                });
+
+                if (targetUser) {
+                    assignedUserId = targetUser.id;
+                    assignedUserName = targetUser.data().name;
+                } else {
+                    warningMsg = ` (⚠️ Não encontrei "${result.assigneeName}", atribuí a você)`;
+                }
+            } else {
+                warningMsg = ` (⚠️ Sem permissão para delegar, atribuí a você)`;
+            }
+        }
+
+        const newTask = {
+            userId: assignedUserId,
+            userName: assignedUserName,
+            text: (result.description || result.title || "Nova Tarefa via WhatsApp") + (mediaUrl ? `\n[Mídia: ${mediaUrl}]` : ''),
+            isDone: false,
+            dueDate: result.date ? result.date.split('T')[0] : null, // Apenas data YYYY-MM-DD
+            creatorId: userId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            origin: 'WhatsApp'
+        };
+
+        await db.collection('todos').add(newTask);
+        
+        // Se a IA já gerou uma resposta boa, usa ela, senão gera uma padrão
+        const responseMsg = result.replyToUser && !warningMsg ? result.replyToUser : `✅ Tarefa criada para *${assignedUserName.split(' ')[0]}*!${warningMsg}`;
+        
+        await enviarMensagemWhatsApp(rawPhone, responseMsg);
+        
+        // Se foi delegado para outra pessoa, avisa ela também (se tiver telefone)
+        if (assignedUserId !== userId) {
+             const targetUserDoc = await db.collection('users').doc(assignedUserId).get();
+             const targetPhone = targetUserDoc.data()?.phone;
+             if (targetPhone) {
+                 await enviarMensagemWhatsApp(targetPhone, `📝 *Nova Tarefa Atribuída*\n\n"${newTask.text}"\n\nPor: ${userData.name}`);
+             }
+        }
+
+        await updateLog({ status: 'success', message: 'Tarefa Criada', data: newTask });
+        return;
+    }
+
+    // Ações baseadas na intenção (ESCRITA)
     if (result.intent === 'UpdateDeal' && result.clientId) {
         const dealsRef = db.collection('deals');
         const dealsSnap = await dealsRef
@@ -385,6 +641,14 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
             lot: ''
         };
         await db.collection('visits').add(newVisit);
+        
+        // Atualiza a data da última visita no cliente para o alerta de inatividade funcionar
+        if (result.clientId) {
+            await db.collection('clients').doc(result.clientId).update({
+                lastVisitDate: new Date().toISOString()
+            });
+        }
+
         await updateLog({ status: 'success', message: 'Visita criada', data: newVisit });
     }
     else if (result.intent === 'LogActivity') {
@@ -478,19 +742,170 @@ export const whatsappWebhook = functions.https.onRequest(async (req, res) => {
   res.status(200).send('Webhook Ativo (GET)');
 });
 
-// --- 2. GATILHO DE PROCESSAMENTO (BACKGROUND) ---
-// Acionado automaticamente quando um novo documento é criado em 'whatsapp_logs'
-export const processWhatsAppQueue = functions.firestore
-    .document('whatsapp_logs/{logId}')
-    .onCreate(async (snap: functions.firestore.QueryDocumentSnapshot, context: functions.EventContext) => {
-        const data = snap.data();
+// --- 3. FUNÇÕES AGENDADAS (CRON JOBS) ---
+
+// A. Checagem Pós-Visita (Roda a cada hora)
+// Cobra detalhes de visitas recém-criadas que estão "vazias" ou curtas
+export const checkRecentVisits = functions.pubsub.schedule('every 1 hours').onRun(async (context) => {
+    const db = admin.firestore();
+    const now = new Date();
+    // Janela de tempo: entre 1h e 4h atrás (dá tempo do técnico sair da fazenda e pegar sinal)
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+    const fourHoursAgo = new Date(now.getTime() - 4 * 60 * 60 * 1000);
+
+    const visitsSnap = await db.collection('visits')
+        .where('createdAt', '>=', fourHoursAgo.toISOString())
+        .where('createdAt', '<=', oneHourAgo.toISOString())
+        .get();
+
+    for (const doc of visitsSnap.docs) {
+        const visit = doc.data();
         
-        // Só processa se estiver com status 'pending_processing'
-        // Isso evita loops infinitos ou processamento de logs antigos/manuais
-        if (data.status !== 'pending_processing') {
-            return;
+        // Se já foi lembrado ou se tem um relatório decente (> 40 chars), ignora
+        if (visit.reminderSent || (visit.report && visit.report.length > 40)) {
+            continue;
         }
 
-        console.log(`Iniciando processamento do log ${context.params.logId}`);
-        await processMessageLogic(data.payload, snap.ref);
+        // Busca o técnico para pegar o telefone
+        if (!visit.technicianId) continue;
+        const userDoc = await db.collection('users').doc(visit.technicianId).get();
+        const userData = userDoc.data();
+
+        if (userData && userData.phone) {
+            // Busca nome do cliente
+            let clientName = "Cliente";
+            if (visit.clientId) {
+                const clientDoc = await db.collection('clients').doc(visit.clientId).get();
+                if (clientDoc.exists) clientName = clientDoc.data()?.name || "Cliente";
+            }
+
+            const msg = `🤖 Olá ${userData.name.split(' ')[0]}! \n\nVi que você registrou uma visita no *${clientName}* há pouco tempo, mas o relatório está curto.\n\nTem algum detalhe importante para acrescentar? Pode me mandar um áudio ou texto aqui que eu complemento a visita para você! 📝`;
+            
+            await enviarMensagemWhatsApp(userData.phone, msg);
+            
+            // Marca que já enviou para não floodar
+            await doc.ref.update({ reminderSent: true });
+        }
+    }
+    return null;
+});
+
+// --- 4. API DE LOGS (PARA O FRONTEND) ---
+export const whatsappLogs = functions.https.onRequest(async (req, res) => {
+  // CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Allow-Methods', 'GET');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(204).send('');
+    return;
+  }
+
+  try {
+    const logsSnap = await db.collection('whatsapp_logs')
+      .orderBy('receivedAt', 'desc')
+      .limit(20)
+      .get();
+    
+    const logs = logsSnap.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }));
+    
+    res.status(200).json(logs);
+  } catch (error) {
+    console.error('Error fetching logs:', error);
+    res.status(500).json({ error: 'Failed to fetch logs' });
+  }
+});
+
+// B. Checagem Diária (Roda todo dia às 08:00)
+// Lembretes de agenda e Clientes esquecidos
+export const dailyCRMCheck = functions.pubsub.schedule('every day 08:00').timeZone('America/Sao_Paulo').onRun(async (context) => {
+    const db = admin.firestore();
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // 1. Lembretes de Agenda (Visitas marcadas para hoje)
+    // Assumindo que visitas futuras têm status 'Agendada' ou data futura
+    const scheduledVisits = await db.collection('visits')
+        .where('date', '>=', today.toISOString())
+        .where('date', '<', tomorrow.toISOString())
+        .get();
+
+    // Agrupa por técnico
+    const visitsByTech: any = {};
+    
+    scheduledVisits.docs.forEach(doc => {
+        const v = doc.data();
+        // Filtra apenas as que parecem ser agendamentos (não concluídas no passado)
+        if (v.status !== 'Concluída' && v.technicianId) {
+            if (!visitsByTech[v.technicianId]) visitsByTech[v.technicianId] = [];
+            visitsByTech[v.technicianId].push(v);
+        }
     });
+
+    // Envia Lembretes de Agenda
+    for (const techId of Object.keys(visitsByTech)) {
+        const userDoc = await db.collection('users').doc(techId).get();
+        const userData = userDoc.data();
+        if (!userData || !userData.phone) continue;
+
+        const visits = visitsByTech[techId];
+        let msg = `📅 *Bom dia, ${userData.name.split(' ')[0]}!* \n\nVocê tem *${visits.length} visitas* agendadas para hoje:\n`;
+        
+        for (const v of visits) {
+            let clientName = "Cliente";
+            if (v.clientId) {
+                const c = await db.collection('clients').doc(v.clientId).get();
+                clientName = c.data()?.name || "Cliente";
+            }
+            msg += `- ${clientName}\n`;
+        }
+        
+        msg += `\nBoa jornada! 🚀`;
+        await enviarMensagemWhatsApp(userData.phone, msg);
+    }
+
+    // 2. Alerta de Clientes "Esquecidos" (> 45 dias sem visita)
+    const fortyFiveDaysAgo = new Date();
+    fortyFiveDaysAgo.setDate(fortyFiveDaysAgo.getDate() - 45);
+
+    const forgottenClients = await db.collection('clients')
+        .where('lastVisitDate', '<', fortyFiveDaysAgo.toISOString())
+        .where('active', '==', true)
+        .limit(100) 
+        .get();
+
+    const forgottenByTech: any = {};
+    forgottenClients.docs.forEach(doc => {
+        const c = doc.data();
+        const techId = c.assignedTechnicianId || (c.assignedTechnicianIds && c.assignedTechnicianIds[0]);
+        if (techId) {
+            if (!forgottenByTech[techId]) forgottenByTech[techId] = [];
+            // Limita a 3 lembretes por dia por técnico para não floodar
+            if (forgottenByTech[techId].length < 3) {
+                forgottenByTech[techId].push(c.name);
+            }
+        }
+    });
+
+    for (const techId of Object.keys(forgottenByTech)) {
+        const clients = forgottenByTech[techId];
+        if (clients.length === 0) continue;
+
+        const userDoc = await db.collection('users').doc(techId).get();
+        const userData = userDoc.data();
+        if (!userData || !userData.phone) continue;
+
+        let msg = `⚠️ *Atenção, ${userData.name.split(' ')[0]}*\n\nEstes clientes estão há mais de 45 dias sem visita:\n`;
+        clients.forEach((name: string) => msg += `- ${name}\n`);
+        msg += `\nQue tal agendar uma visita ou mandar um "Oi"?`;
+
+        await enviarMensagemWhatsApp(userData.phone, msg);
+    }
+
+    return null;
+});

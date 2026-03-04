@@ -387,11 +387,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
                     <div><h4 className="font-black text-slate-900 text-sm">Dr. Zeta</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Veterinária</p></div>
                  </a>
 
-                 {/* DIAGNÓSTICO WHATSAPP (Visível Desktop e Mobile) */}
-                 <button onClick={() => handleMobileMenuNavigation('integration_test')} className="p-6 bg-green-50 border border-green-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
-                    <div className="h-14 w-14 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center shadow-sm border border-green-200"><MessageSquare size={28} /></div>
-                    <div><h4 className="font-black text-slate-900 text-sm">WhatsApp</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Diagnóstico</p></div>
-                 </button>
+                 {/* DIAGNÓSTICO WHATSAPP (Visível Apenas para lucas.maia) */}
+                 {(user.email || '').toLowerCase().includes('lucas.maia') && (
+                   <button onClick={() => handleMobileMenuNavigation('integration_test')} className="p-6 bg-green-50 border border-green-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
+                      <div className="h-14 w-14 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center shadow-sm border border-green-200"><MessageSquare size={28} /></div>
+                      <div><h4 className="font-black text-slate-900 text-sm">WhatsApp</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Diagnóstico</p></div>
+                   </button>
+                 )}
 
 
               </div>

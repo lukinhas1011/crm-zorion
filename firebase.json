@@ -22,6 +22,14 @@
     ],
     "rewrites": [
       {
+        "source": "/api/whatsapp/webhook",
+        "function": "whatsappWebhook"
+      },
+      {
+        "source": "/api/whatsapp/logs",
+        "function": "whatsappLogs"
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
