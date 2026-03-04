@@ -10,6 +10,9 @@ import {
 import { summarizeVisitAudio } from '../services/geminiService';
 import { Button } from '../components/Button';
 import { deleteVisitPhoto } from '../services/storageService';
+import { deleteDoc, doc } from 'firebase/firestore';
+import { db } from '../services/firebase';
+import { COLLECTIONS } from '../services/dbSchema';
 
 interface VisitsProps {
   visits: Visit[];
@@ -83,10 +86,17 @@ const Visits: React.FC<VisitsProps> = ({ visits, activities = [], clients, onSel
   };
 
   const handleDeleteVisit = async () => {
-    if (selectedVisit && onDeleteVisit) {
+    if (selectedVisit) {
         setIsDeleting(true);
         try {
-            await onDeleteVisit(selectedVisit.id);
+            if (selectedVisit.recordType === 'activity') {
+                // Se for uma atividade (WhatsApp), deleta da coleção de atividades
+                await deleteDoc(doc(db, COLLECTIONS.ACTIVITIES, selectedVisit.id));
+            } else {
+                // Se for uma visita real, usa a função passada por prop
+                if (onDeleteVisit) await onDeleteVisit(selectedVisit.id);
+            }
+            
             setIsDeleteVisitConfirmOpen(false);
             setSelectedVisit(null);
         } catch (error) {

@@ -139,6 +139,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [currentMonth, setCurrentMonth] = useState(new Date());
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
   
+  // Event Details Modal State
+  const [selectedEvent, setSelectedEvent] = useState<any>(null);
+  const [isDeleteEventConfirmOpen, setIsDeleteEventConfirmOpen] = useState(false);
+
   // Todo List State
   const [todos, setTodos] = useState<Todo[]>([]);
   const [newTodo, setNewTodo] = useState('');
@@ -271,6 +275,19 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
+  const handleDeleteEvent = async () => {
+    if (!selectedEvent) return;
+    try {
+        const collectionName = selectedEvent.type === 'visit' ? COLLECTIONS.VISITS : COLLECTIONS.ACTIVITIES;
+        await deleteDoc(doc(db, collectionName, selectedEvent.id));
+        setIsDeleteEventConfirmOpen(false);
+        setSelectedEvent(null);
+    } catch (error) {
+        console.error("Erro ao excluir evento:", error);
+        alert("Erro ao excluir evento.");
+    }
+  };
+
   const totalHerdSize = useMemo(() => clients.reduce((acc, client) => acc + (client.herdSize || 0), 0), [clients]);
   const totalTreated = useMemo(() => clients.reduce((acc, client) => acc + (client.treatedHerdSize || 0), 0), [clients]);
   
@@ -389,7 +406,7 @@ const Dashboard: React.FC<DashboardProps> = ({
              <div className="space-y-4">{getEventsForDay(selectedDate).length === 0 ? (<div className="py-20 text-center"><p className="text-sm font-bold text-slate-300 italic">{t('dash.sem_eventos')}</p></div>) : (getEventsForDay(selectedDate).sort((a,b) => a.date.localeCompare(b.date)).map((event: any) => {
                const client = clients.find(c => c.id === event.clientId);
                return (
-                <div key={event.id} className="w-full flex items-center gap-5 p-5 bg-slate-50 rounded-[2rem] border border-slate-100 group cursor-pointer" onClick={() => onSelectClient(event.clientId)}>
+                <div key={event.id} className="w-full flex items-center gap-5 p-5 bg-slate-50 rounded-[2rem] border border-slate-100 group cursor-pointer hover:bg-white hover:shadow-md transition-all" onClick={() => setSelectedEvent(event)}>
                   <div className={`h-12 w-12 rounded-2xl flex items-center justify-center border ${event.type === 'visit' ? 'text-emerald-600 bg-emerald-50' : 'text-blue-600 bg-blue-50'}`}>
                     <MapPin size={20} />
                   </div>
@@ -534,6 +551,104 @@ const Dashboard: React.FC<DashboardProps> = ({
            </div>
         </div>
       </div>
+
+      {/* MODAL DE DETALHES DO EVENTO (AGENDA) */}
+      {selectedEvent && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl relative border border-slate-100 flex flex-col max-h-[85vh]">
+                <div className="flex justify-between items-start mb-6">
+                    <div className="flex items-center gap-4">
+                        <div className={`h-14 w-14 rounded-2xl flex items-center justify-center border ${selectedEvent.type === 'visit' ? 'bg-emerald-50 border-emerald-100 text-emerald-600' : 'bg-blue-50 border-blue-100 text-blue-600'}`}>
+                            {selectedEvent.type === 'visit' ? <MapPin size={24} /> : <MessageSquare size={24} />}
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-black text-slate-900 italic tracking-tighter leading-tight">
+                                {selectedEvent.type === 'visit' ? 'Visita Técnica' : 'Atividade / Contato'}
+                            </h3>
+                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                                {new Date(selectedEvent.date).toLocaleDateString()} • {new Date(selectedEvent.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                            </p>
+                        </div>
+                    </div>
+                    <button onClick={() => setSelectedEvent(null)} className="p-2 bg-slate-50 rounded-full text-slate-400 hover:bg-slate-100 transition-colors"><X size={20} /></button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 mb-6">
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Cliente / Fazenda</p>
+                        <p className="text-sm font-bold text-slate-800">
+                            {clients.find(c => c.id === selectedEvent.clientId)?.name || 'Cliente Não Identificado'}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                            {clients.find(c => c.id === selectedEvent.clientId)?.farmName || 'Sem Unidade'}
+                        </p>
+                    </div>
+
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Descrição / Relato</p>
+                        <p className="text-sm font-medium text-slate-600 whitespace-pre-line leading-relaxed">
+                            {selectedEvent.transcript || selectedEvent.description || selectedEvent.report || 'Sem descrição.'}
+                        </p>
+                    </div>
+                    
+                    {selectedEvent.product && (
+                        <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                            <p className="text-[9px] font-black text-blue-400 uppercase tracking-widest mb-1">Produto Relacionado</p>
+                            <p className="text-sm font-bold text-blue-700 flex items-center gap-2">
+                                <Package size={16} /> {selectedEvent.product}
+                            </p>
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex gap-3 pt-4 border-t border-slate-100">
+                    <button 
+                        onClick={() => setIsDeleteEventConfirmOpen(true)}
+                        className="flex-1 py-3 bg-red-50 text-red-500 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
+                    >
+                        <Trash2 size={16} /> Excluir
+                    </button>
+                    {selectedEvent.clientId && (
+                        <button 
+                            onClick={() => { onSelectClient(selectedEvent.clientId); setSelectedEvent(null); }}
+                            className="flex-[2] py-3 bg-zorion-900 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-zorion-800 transition-colors shadow-lg shadow-zorion-900/20"
+                        >
+                            Ver Cliente
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* CONFIRMAÇÃO DE EXCLUSÃO DE EVENTO */}
+      {isDeleteEventConfirmOpen && (
+        <div className="fixed inset-0 z-[700] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl relative border border-slate-100 flex flex-col items-center text-center">
+                <div className="h-20 w-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mb-6 border border-red-100">
+                    <Trash2 size={32} />
+                </div>
+                <h3 className="text-xl font-black text-slate-900 mb-2 italic tracking-tighter">Excluir este evento?</h3>
+                <p className="text-sm text-slate-500 mb-8 font-medium">
+                    Esta ação removerá o item da sua agenda e do histórico.
+                </p>
+                <div className="flex gap-3 w-full">
+                    <button 
+                        onClick={() => setIsDeleteEventConfirmOpen(false)} 
+                        className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={handleDeleteEvent} 
+                        className="flex-1 py-3 bg-red-600 text-white rounded-xl font-black text-xs uppercase tracking-widest hover:bg-red-700 transition-colors shadow-lg shadow-red-200"
+                    >
+                        Confirmar
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* MODAL DE DETALHAMENTO DE VISITAS (Mês Atual) */}
       {isVisitModalOpen && (
