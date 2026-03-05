@@ -546,7 +546,7 @@ const Clients: React.FC<ClientsProps> = ({
               const isSynced = (client as any).originSystem === 'estoque_zorion';
 
               return (
-                <tr key={client.id} onClick={() => onSelectClient(client.id)} className="group hover:bg-blue-50/40 cursor-pointer transition-colors">
+                <tr key={client.id} onClick={() => onNavigate('client-details', { clientId: client.id, initialTab: 'deals' })} className="group hover:bg-blue-50/40 cursor-pointer transition-colors">
                   <td className="px-4 py-3 text-center">
                     {client.type === 'Fábrica' ? <Factory size={16} className="text-blue-600" /> : <Beef size={16} className="text-emerald-600" />}
                   </td>

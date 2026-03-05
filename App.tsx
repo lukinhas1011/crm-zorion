@@ -249,17 +249,34 @@ const AppContent: React.FC = () => {
 
     const unsubStages = onSnapshot(query(collection(db, COLLECTIONS.STAGES), orderBy('order', 'asc')), async (snap) => {
       const stgs = snap.docs.map(d => ({ ...d.data(), id: d.id } as Stage));
-      const newStageNames = ['Cliente potencial', 'Estabelecimento de oportunidade', 'Validação de negociação', 'Validação e negociação comercial'];
+      // Atualizado conforme solicitação: Separar Validação de Negociação
+      const newStageNames = ['Cliente potencial', 'Estabelecimento de oportunidade', 'Validação', 'Negociação Comercial'];
       const currentNames = stgs.map(s => s.name);
+      // Verifica se precisa atualizar (se os nomes ou a quantidade mudaram)
       const isCorrect = stgs.length === newStageNames.length && JSON.stringify(currentNames) === JSON.stringify(newStageNames);
 
       if (snap.empty || !isCorrect) {
+        console.log("Atualizando estágios do funil...");
         const batch = writeBatch(db);
-        snap.docs.forEach(d => batch.delete(d.ref));
+        
+        // Se houver mais estágios antigos do que novos, deleta os extras
+        snap.docs.forEach(d => {
+            if (!newStageNames.includes(d.data().name) && parseInt(d.id.split('_')[1]) > newStageNames.length) {
+                batch.delete(d.ref);
+            }
+        });
+
         newStageNames.forEach((name, idx) => {
           const sid = `stg_${idx + 1}`;
-          const newStage: Stage = { id: sid, pipelineId: 'pip_principal', name, order: idx + 1, probability: (idx + 1) * 25 };
-          batch.set(doc(db, COLLECTIONS.STAGES, sid), prepareForSave(newStage, true));
+          const newStage: Stage = { 
+              id: sid, 
+              pipelineId: 'pip_principal', 
+              name, 
+              order: idx + 1, 
+              probability: (idx + 1) * 20 // Ajustado probabilidade (20, 40, 60, 80)
+          };
+          // Usa set com merge para não perder outros campos se existirem, mas garante o nome e ordem
+          batch.set(doc(db, COLLECTIONS.STAGES, sid), prepareForSave(newStage, true), { merge: true });
         });
         await batch.commit();
       } else {
@@ -396,11 +413,12 @@ const AppContent: React.FC = () => {
       case 'new_visit': return <NewVisit clients={clients} catalog={catalog} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onAddVisit={handleAddVisit} onAddCatalogItem={handleAddCatalogItem} onComplete={() => setActivePage('dashboard')} user={user} />;
       case 'price_table': return <PriceTablePage user={user} />;
       case 'client_details':
-        const client = clients.find(c => c.id === selectedClientId);
+        const targetClientId = pageContext?.clientId || selectedClientId;
+        const client = clients.find(c => c.id === targetClientId);
         if (!client) return null;
         return <ClientDetails 
           client={client} 
-          visits={visits.filter(v => v.clientId === selectedClientId)} 
+          visits={visits.filter(v => v.clientId === targetClientId)} 
           deals={deals} 
           stages={stages}
           pipelines={pipelines}
@@ -412,9 +430,10 @@ const AppContent: React.FC = () => {
           onUpdateClient={handleUpdateClient} 
           onAddCatalogItem={handleAddCatalogItem}
           onNavigate={handleNavigate} 
-          activities={activities.filter(a => a.clientId === selectedClientId)}
+          activities={activities.filter(a => a.clientId === targetClientId)}
           onAddActivity={handleAddActivity}
           onUpdateActivity={handleUpdateActivity}
+          initialTab={pageContext?.initialTab}
           {...commonProps}
         />;
       case 'visits': return <Visits visits={visits} clients={clients} onSelectClient={handleSelectClient} onUpdateVisit={handleUpdateVisit} onDeleteVisit={handleDeleteVisit} />;

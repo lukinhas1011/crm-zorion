@@ -123,7 +123,7 @@ interface WhatsAppPayload {
 }
 
 // --- LÓGICA PESADA (IA + CRM) ---
-async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.firestore.DocumentReference) {
+export async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.firestore.DocumentReference) {
   const updateLog = async (data: any) => {
       try { await logRef.update(data); } catch (e) { console.error("Error updating log:", e); }
   };
@@ -277,9 +277,16 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
       OBJETIVO: Interpretar a mensagem e estruturar os dados para o CRM.
       
       REGRAS DE CLIENTE (SEGURANÇA):
-      - O usuário SÓ PODE acessar os clientes listados em "Clientes Disponíveis".
-      - Se ele tentar registrar algo para um cliente que NÃO está na lista, sua resposta (ReplyToUser) deve ser: "❌ Você não tem permissão para acessar o cliente [Nome] ou ele não existe na sua carteira."
-      - Identifique o cliente pelo nome. Se já existir, use o ID. Se for novo, preencha "newClientName".
+      - O usuário "Técnico" SÓ PODE acessar os clientes listados em "Clientes Disponíveis". Se tentar acessar outro, bloqueie.
+      - O usuário "Admin", "Master" ou "Veterinário" TEM PERMISSÃO TOTAL. Ele pode acessar, editar e criar registros para QUALQUER cliente, mesmo que não esteja na lista "Clientes Disponíveis".
+      - Se o usuário for Admin/Master/Vet e mencionar um cliente que não está na lista, assuma que ele existe e use o nome fornecido para buscar ou criar.
+      - Se for um NOVO CLIENTE (apenas para Admin/Master/Vet):
+          - TENTE AO MÁXIMO extrair o nome do cliente e da fazenda do texto.
+          - Preencha "newClientName" com o nome do responsável/cliente. Se não achar, use "Cliente WhatsApp [Telefone]".
+          - Preencha "newFarmName" com o nome da fazenda. Se não achar, use "Fazenda sem Nome".
+          - Deixe "clientId" como null.
+          - Defina a intenção como "NewDeal" (para já criar uma oportunidade) ou "LogActivity" (apenas cadastro).
+      - Se o usuário for "Técnico" e tentar criar cliente ou acessar um fora da lista, responda: "❌ Você não tem permissão para acessar/criar o cliente [Nome]."
       
       REGRAS DE INTENÇÃO (CRÍTICO):
       1. "UpdateDeal" (Atualizar/Registrar em Card Existente):
@@ -303,9 +310,19 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
       8. "ScheduleVisit" (Agendar Visita Futura):
          - Use quando o usuário quiser MARCAR um compromisso futuro: "Agende visita no Ademar para sexta-feira", "Marcar visita amanhã".
          - A data deve ser futura.
-      9. "CreateTask" (Criar Tarefa/Lembrete):
-         - Use quando o usuário quiser criar uma tarefa na lista "Minhas Tarefas" ou atribuir a alguém: "Lembrar de comprar vacina", "Tarefa: Ligar para o João amanhã", "Crie uma tarefa para o Pedro: Revisar relatório".
-         - Se o usuário mencionar um nome de pessoa para fazer a tarefa (ex: "para o Pedro"), extraia em "assigneeName".
+      10. "DeleteRecord" (Excluir Registro):
+          - Use APENAS se o usuário pedir explicitamente para EXCLUIR, DELETAR ou REMOVER algo.
+          - PERMISSÃO: 
+             - Usuário Comum: Pode excluir APENAS o que ele mesmo criou (tarefas, visitas, atividades).
+             - Admin/Master/Veterinário: Pode excluir QUALQUER registro de QUALQUER pessoa.
+          - Identifique o tipo: 
+             - "task" (tarefa rápida), 
+             - "visit" (visita técnica completa), 
+             - "activity" (visita rápida/registro no card),
+             - "deal" (negócio/oportunidade), 
+             - "client" (cliente).
+          - Identifique o alvo: ID (se fornecido) ou descrição/nome para busca.
+          - Preencha "deleteType" e "deleteTarget".
 
       DIRETRIZES DE CONTEÚDO:
       - Description: Transcreva TUDO com detalhes. Ex: "Entregue ração 20/80. Contagem: 150 animais".
@@ -318,7 +335,7 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
 
       SAÍDA JSON OBRIGATÓRIA:
       {
-        "intent": "UpdateDeal" | "NewDeal" | "NewVisit" | "LogActivity" | "Clarification" | "QueryClient" | "UpdateClient" | "ScheduleVisit" | "CreateTask" | "Ignorar",
+        "intent": "UpdateDeal" | "NewDeal" | "NewVisit" | "LogActivity" | "Clarification" | "QueryClient" | "UpdateClient" | "ScheduleVisit" | "CreateTask" | "DeleteRecord" | "Ignorar",
         "clientId": "ID ou null",
         "newClientName": "Nome se novo",
         "newFarmName": "Fazenda se nova",
@@ -331,12 +348,14 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
         "products": ["Produto Citado"],
         "clientUpdates": { "phone": "...", "email": "...", "farmName": "...", "name": "..." },
         "assigneeName": "Nome da pessoa responsável (apenas se mencionado explicitamente)",
+        "deleteType": "task" | "visit" | "deal" | "client" | "activity" | null,
+        "deleteTarget": "Descrição ou ID do alvo para exclusão",
         "sentiment": "Positivo" | "Neutro" | "Negativo",
         "replyToUser": "Mensagem de resposta para o WhatsApp"
       }
     `;
 
-    let result;
+    let result: any;
     try {
         const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
         const response = await ai.models.generateContent({
@@ -377,16 +396,97 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
         return;
     }
 
+    // --- LÓGICA DE EXCLUSÃO (DELETE) ---
+    if (result.intent === 'DeleteRecord') {
+        const isAdminEmail = (userData.email || '').toLowerCase() === 'l.rigolin@zorionan.com';
+        const isAdmin = isAdminEmail || userData.role === 'Admin' || userData.role === 'Master' || userData.role === 'Veterinário';
+        
+        let deletedCount = 0;
+        let collectionName = '';
+
+        if (result.deleteType === 'task') collectionName = 'todos';
+        else if (result.deleteType === 'visit') collectionName = 'visits';
+        else if (result.deleteType === 'activity') collectionName = 'activities';
+        else if (result.deleteType === 'deal') collectionName = 'deals';
+        else if (result.deleteType === 'client') collectionName = 'clients';
+
+        if (collectionName && result.deleteTarget) {
+            // Tenta buscar por ID direto se parecer um ID
+            let docRef = db.collection(collectionName).doc(result.deleteTarget);
+            let docSnap = await docRef.get();
+            let foundDoc = null;
+
+            if (docSnap.exists) {
+                foundDoc = docSnap;
+            } else {
+                // Busca por texto/descrição (busca simples)
+                const snapshot = await db.collection(collectionName)
+                    .orderBy('createdAt', 'desc') // Pega os mais recentes
+                    .limit(20)
+                    .get();
+                
+                const target = result.deleteTarget.toLowerCase();
+                
+                for (const doc of snapshot.docs) {
+                    const data = doc.data();
+                    let match = false;
+                    
+                    // Verifica campos comuns
+                    if (data.title && data.title.toLowerCase().includes(target)) match = true;
+                    if (data.description && data.description.toLowerCase().includes(target)) match = true;
+                    if (data.text && data.text.toLowerCase().includes(target)) match = true; // Tasks
+                    if (data.name && data.name.toLowerCase().includes(target)) match = true; // Clients
+                    if (data.report && data.report.toLowerCase().includes(target)) match = true; // Visits
+
+                    if (match) {
+                        foundDoc = doc;
+                        break; // Deleta apenas o primeiro encontrado para segurança
+                    }
+                }
+            }
+
+            if (foundDoc) {
+                const data = foundDoc.data();
+                // VERIFICAÇÃO DE PROPRIEDADE
+                // Se for Admin, pode tudo.
+                // Se não for Admin, só pode se for o criador.
+                const isCreator = (data?.creatorId === userId) || (data?.technicianId === userId) || (data?.userId === userId);
+                
+                if (isAdmin || isCreator) {
+                    await foundDoc.ref.delete();
+                    deletedCount = 1;
+                } else {
+                    await enviarMensagemWhatsApp(rawPhone, "🚫 Você não tem permissão para excluir este registro (pertence a outro usuário).");
+                    return;
+                }
+            }
+        }
+
+        if (deletedCount > 0) {
+            await enviarMensagemWhatsApp(rawPhone, `🗑️ Registro excluído com sucesso.`);
+            await updateLog({ status: 'success', message: 'Registro excluído', type: result.deleteType });
+        } else {
+            await enviarMensagemWhatsApp(rawPhone, `⚠️ Não encontrei nenhum registro correspondente a "${result.deleteTarget}" que você possa excluir.`);
+        }
+        return;
+    }
+
     // --- LÓGICA DE CRIAÇÃO DE CLIENTE (ON THE FLY) ---
     if (!result.clientId && result.newClientName) {
         try {
             const newClientData = {
-                name: result.newClientName,
-                farmName: result.newFarmName || 'Nova Fazenda',
-                phone: '',
+                name: result.newClientName || `Cliente WhatsApp ${phone.slice(-4)}`,
+                farmName: result.newFarmName || 'Fazenda sem Nome',
+                phone: phone, // Usa o telefone que mandou a mensagem
                 email: '',
                 assignedTechnicianId: userId,
                 assignedTechnicianIds: [userId],
+                status: 'Active', // Padronizado com o site
+                tags: ['WhatsApp'], // Tag para identificar origem
+                city: '',
+                state: '',
+                address: '',
+                notes: `Criado via WhatsApp em ${new Date().toLocaleDateString('pt-BR')}`,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
                 active: true,
@@ -394,9 +494,10 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
             };
             const newClientRef = await db.collection('clients').add(newClientData);
             result.clientId = newClientRef.id;
-            await updateLog({ step: 'client_created', newClientId: result.clientId });
+            await updateLog({ step: 'client_created', newClientId: result.clientId, data: newClientData });
         } catch (err) {
             console.error("Erro ao criar cliente:", err);
+            await updateLog({ status: 'error', error: 'Falha ao criar cliente: ' + err });
         }
     }
 
@@ -508,7 +609,7 @@ async function processMessageLogic(payload: WhatsAppPayload, logRef: admin.fires
                     const u = doc.data();
                     const name = (u.name || '').toLowerCase();
                     const email = (u.email || '').toLowerCase();
-                    const search = result.assigneeName.toLowerCase();
+                    const search = (result.assigneeName || '').toLowerCase();
                     return name.includes(search) || email.includes(search);
                 });
 
@@ -741,6 +842,20 @@ export const whatsappWebhook = functions.https.onRequest(async (req, res) => {
 
   res.status(200).send('Webhook Ativo (GET)');
 });
+
+// --- 2. GATILHO DE PROCESSAMENTO (ASSÍNCRONO) ---
+// Monitora a coleção de logs e processa quando chega novo item
+export const processWhatsAppQueue = functions.firestore
+    .document('whatsapp_logs/{logId}')
+    .onCreate(async (snap: functions.firestore.QueryDocumentSnapshot, context: functions.EventContext) => {
+        const logData = snap.data();
+        if (logData.status !== 'pending_processing') return;
+
+        const logRef = snap.ref;
+        const payload = logData.payload as WhatsAppPayload;
+
+        await processMessageLogic(payload, logRef);
+    });
 
 // --- 3. FUNÇÕES AGENDADAS (CRON JOBS) ---
 

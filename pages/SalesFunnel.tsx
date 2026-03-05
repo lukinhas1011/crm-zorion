@@ -40,10 +40,11 @@ interface SalesFunnelProps {
 
 const FIXED_PIPELINE_ID = 'pip_principal';
 const FIXED_STAGES: Stage[] = [
-  { id: 'stg_1', pipelineId: FIXED_PIPELINE_ID, name: 'Cliente potencial', order: 1, probability: 25 },
-  { id: 'stg_2', pipelineId: FIXED_PIPELINE_ID, name: 'Estabelecimento de oportunidade', order: 2, probability: 50 },
-  { id: 'stg_3', pipelineId: FIXED_PIPELINE_ID, name: 'Validação de negociação', order: 3, probability: 75 },
-  { id: 'stg_4', pipelineId: FIXED_PIPELINE_ID, name: 'Validação e negociação comercial', order: 4, probability: 100 }
+  { id: 'stg_1', pipelineId: FIXED_PIPELINE_ID, name: 'Cliente potencial', order: 1, probability: 20 },
+  { id: 'stg_2', pipelineId: FIXED_PIPELINE_ID, name: 'Estabelecimento de oportunidade', order: 2, probability: 40 },
+  { id: 'stg_3', pipelineId: FIXED_PIPELINE_ID, name: 'Validação de negociação', order: 3, probability: 60 },
+  { id: 'stg_4', pipelineId: FIXED_PIPELINE_ID, name: 'Negociação Comercial', order: 4, probability: 80 },
+  { id: 'stg_5', pipelineId: FIXED_PIPELINE_ID, name: 'Validação Comercial', order: 5, probability: 100 }
 ];
 
 const SalesFunnel: React.FC<SalesFunnelProps> = ({ 
@@ -908,7 +909,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
                                           <span className="text-[8px] text-slate-400 uppercase">Qtd</span>
                                           <input 
                                             type="number" 
-                                            className="w-12 bg-white border border-slate-200 rounded px-1 py-0.5 text-center text-xs font-bold outline-none" 
+                                            className="w-32 bg-white border border-slate-200 rounded px-1 py-0.5 text-center text-xs font-bold outline-none" 
                                             value={prod.quantity} 
                                             onChange={(e) => updateProduct(idx, { quantity: Number(e.target.value) })}
                                           />
@@ -917,7 +918,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
                                           <span className="text-[8px] text-slate-400 uppercase">Unitário R$</span>
                                           <input 
                                             type="number" 
-                                            className="w-24 bg-white border border-slate-200 rounded px-2 py-0.5 text-right text-xs font-bold outline-none text-[#009b58]" 
+                                            className="w-48 bg-white border border-slate-200 rounded px-2 py-0.5 text-right text-xs font-bold outline-none text-[#009b58]" 
                                             value={prod.price} 
                                             onChange={(e) => updateProduct(idx, { price: Number(e.target.value) })}
                                           />

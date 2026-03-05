@@ -33,14 +33,15 @@ interface ClientDetailsProps {
   onUpdateActivity?: (activity: Activity) => void;
   currencyMode?: 'BRL' | 'USD';
   exchangeRate?: number;
+  initialTab?: 'timeline' | 'deals' | 'herd';
 }
 
 const ClientDetails: React.FC<ClientDetailsProps> = ({ 
   client, visits, deals, stages, pipelines, catalog, user, onBack, onAddVisit, onUpdateVisit, onUpdateClient, onAddCatalogItem, onNavigate,
-  activities = [], onAddActivity, onUpdateActivity, currencyMode = 'USD', exchangeRate = 1
+  activities = [], onAddActivity, onUpdateActivity, currencyMode = 'USD', exchangeRate = 1, initialTab = 'timeline'
 }) => {
   const isFactory = client.type === 'Fábrica';
-  const [activeTab, setActiveTab] = useState<'timeline' | 'deals' | 'herd'>('timeline');
+  const [activeTab, setActiveTab] = useState<'timeline' | 'deals' | 'herd'>(initialTab);
   const [isEditingClient, setIsEditingClient] = useState(false);
   const [clientEditData, setClientEditData] = useState<Client>({ ...client });
   const [isInteractionModalOpen, setIsInteractionModalOpen] = useState(false);
@@ -398,6 +399,51 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                     )})}
                   </div>
                 </div>
+           )}
+
+           {activeTab === 'deals' && (
+              <div className="space-y-4 animate-fade-in">
+                {clientDeals.length === 0 ? (
+                   <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                      <DollarSign size={48} className="mb-4 opacity-20" />
+                      <p className="font-medium text-sm">Nenhuma oportunidade encontrada para este cliente.</p>
+                   </div>
+                ) : (
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {clientDeals.map(deal => {
+                         const stageName = stages.find(s => s.id === deal.stageId)?.name || 'Desconhecido';
+                         const pipelineName = pipelines.find(p => p.id === deal.pipelineId)?.name || 'Funil';
+                         
+                         return (
+                           <div key={deal.id} onClick={() => onNavigate('sales', { openDealId: deal.id })} className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-lg hover:border-blue-100 transition-all cursor-pointer group relative overflow-hidden">
+                              <div className={`absolute top-0 left-0 w-1.5 h-full ${deal.status === 'Won' ? 'bg-emerald-500' : deal.status === 'Lost' ? 'bg-red-500' : 'bg-blue-500'}`}></div>
+                              
+                              <div className="flex justify-between items-start mb-4 pl-2">
+                                 <div className="flex flex-col">
+                                    <span className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">{pipelineName} • {stageName}</span>
+                                    <h4 className="font-black text-slate-800 text-lg italic leading-tight group-hover:text-blue-600 transition-colors">{deal.title}</h4>
+                                 </div>
+                                 <div className={`px-3 py-1.5 rounded-xl text-[9px] font-black uppercase tracking-wide ${deal.status === 'Won' ? 'bg-emerald-50 text-emerald-700' : deal.status === 'Lost' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+                                    {deal.status === 'Won' ? 'Ganho' : deal.status === 'Lost' ? 'Perdido' : 'Aberto'}
+                                 </div>
+                              </div>
+                              
+                              <div className="flex items-center justify-between mt-4 pl-2 border-t border-slate-50 pt-4">
+                                 <div className="flex items-center gap-2 text-slate-400">
+                                    <Calendar size={14} />
+                                    <span className="text-[10px] font-bold">{new Date(deal.createdAt || '').toLocaleDateString()}</span>
+                                 </div>
+                                 <p className="font-black text-xl text-slate-900 tracking-tighter flex items-baseline gap-1">
+                                    <span className="text-xs font-bold text-slate-400">{deal.currency}</span>
+                                    {deal.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                 </p>
+                              </div>
+                           </div>
+                         );
+                      })}
+                   </div>
+                )}
+              </div>
            )}
         </div>
       </div>
