@@ -38,8 +38,8 @@ const StatCard = ({ title, value, subtext, icon: Icon, color, onClick, currencyI
         {subtext}
       </p>
     </div>
-    <div className={`p-4 rounded-2xl ${color} bg-opacity-10 group-hover:scale-110 transition-transform`}>
-      <Icon className={`h-7 w-7 ${color.replace('bg-', 'text-')}`} />
+    <div className={`p-4 rounded-2xl bg-${color}-50 group-hover:scale-110 transition-transform`}>
+      <Icon className={`h-7 w-7 text-${color}-600`} />
     </div>
   </button>
 );
@@ -345,14 +345,14 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const renderOperacionalView = () => (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 animate-fade-in">
-      <StatCard title={t('dash.base_cadastro')} value={totalHerdSize.toLocaleString()} subtext={`${clients.length} ${t('dash.fazendas_cadastradas')}`} icon={Beef} color="bg-emerald-600" onClick={() => onNavigate('clients')} />
-      <StatCard title={t('dash.em_suplementacao')} value={totalTreated.toLocaleString()} subtext={`${totalHerdSize > 0 ? Math.round((totalTreated/totalHerdSize)*100) : 0}% ${t('dash.conversao')}`} icon={TrendingUp} color="bg-blue-600" onClick={() => onNavigate('clients')} />
+      <StatCard title={t('dash.base_cadastro')} value={totalHerdSize.toLocaleString()} subtext={`${clients.length} ${t('dash.fazendas_cadastradas')}`} icon={Beef} color="emerald" onClick={() => onNavigate('clients')} />
+      <StatCard title={t('dash.em_suplementacao')} value={totalTreated.toLocaleString()} subtext={`${totalHerdSize > 0 ? Math.round((totalTreated/totalHerdSize)*100) : 0}% ${t('dash.conversao')}`} icon={TrendingUp} color="blue" onClick={() => onNavigate('clients')} />
       <StatCard 
         title={t('dash.visitas_mes')}
         value={currentMonthVisits.length} 
         subtext={`${t('dash.total_de')} ${new Date().toLocaleString('pt-BR', { month: 'long' })}`} 
         icon={ClipboardCheck} 
-        color="bg-indigo-600" 
+        color="indigo" 
         onClick={() => setIsVisitModalOpen(true)} 
       />
     </div>
@@ -368,11 +368,11 @@ const Dashboard: React.FC<DashboardProps> = ({
             value={displayValue} 
             subtext={`${deals.filter(d => d.status === 'Open').length} ${t('dash.em_aberto')}`} 
             icon={Target} 
-            color="bg-amber-600" 
+            color="amber" 
             onClick={() => onNavigate('sales')}
           />
-          <StatCard title={t('dash.taxa_conversao')} value={`${salesMetrics.winRate}%`} subtext={`${salesMetrics.wonCount} ${t('dash.ganhos')}`} icon={Percent} color="bg-emerald-600" onClick={() => onNavigate('sales')} />
-          <StatCard title={t('dash.atividades')} value={salesMetrics.pendingActivities} subtext="Calls, E-mails" icon={Phone} color="bg-blue-600" onClick={() => onNavigate('sales')} />
+          <StatCard title={t('dash.taxa_conversao')} value={`${salesMetrics.winRate}%`} subtext={`${salesMetrics.wonCount} ${t('dash.ganhos')}`} icon={Percent} color="emerald" onClick={() => onNavigate('sales')} />
+          <StatCard title={t('dash.atividades')} value={salesMetrics.pendingActivities} subtext="Calls, E-mails" icon={Phone} color="blue" onClick={() => onNavigate('sales')} />
         </div>
     );
   };

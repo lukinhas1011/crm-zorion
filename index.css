@@ -1,3 +1,21 @@
+@import "tailwindcss";
+
+@theme {
+  --color-zorion-50: #f0f9f4;
+  --color-zorion-100: #dbf0e4;
+  --color-zorion-200: #b9e2cd;
+  --color-zorion-300: #8bcbaf;
+  --color-zorion-400: #58ae88;
+  --color-zorion-500: #38916b;
+  --color-zorion-600: #2a7558;
+  --color-zorion-700: #225d48;
+  --color-zorion-800: #1d4b3b;
+  --color-zorion-900: #004d2c;
+  --color-zorion-950: #0d281e;
+  
+  --font-sans: "Inter", sans-serif;
+}
+
 body {
   margin: 0;
   padding: 0;

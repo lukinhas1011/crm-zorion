@@ -243,6 +243,15 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         if (editingActivity && editingActivity.id === item.id) {
              setEditingActivity(updatedItem as Activity);
         }
+      } else if (itemToDelete.type === 'contact') {
+        const { contactId } = itemToDelete.data;
+        const updatedContacts = (client.contacts || []).filter(c => c.id !== contactId);
+        const updatedFarms = (client.farms || []).map(f => ({
+          ...f,
+          contacts: (f.contacts || []).filter(c => c.id !== contactId)
+        }));
+        
+        onUpdateClient({ ...client, contacts: updatedContacts, farms: updatedFarms });
       }
       setItemToDelete(null);
     } catch (error) {
@@ -292,8 +301,17 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                       <p className="text-[9px] font-black uppercase text-blue-600 mb-1 flex items-center gap-1"><Users size={10} /> Responsáveis</p>
                       <div className="space-y-2">
                         {client.contacts.map((contact) => (
-                          <div key={contact.id} className="flex justify-between items-center">
-                            <span className="text-[10px] font-bold text-slate-700">{contact.name}</span>
+                          <div key={contact.id} className="flex justify-between items-center group/contact">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-bold text-slate-700">{contact.name}</span>
+                              <button 
+                                onClick={() => setItemToDelete({ type: 'contact', data: { contactId: contact.id, name: contact.name } })}
+                                className="opacity-0 group-hover/contact:opacity-100 text-slate-300 hover:text-red-500 transition-all"
+                                title="Excluir Responsável"
+                              >
+                                <Trash2 size={10} />
+                              </button>
+                            </div>
                             <span className="text-[9px] font-black text-blue-600 uppercase bg-blue-100 px-2 py-0.5 rounded-md">{contact.role}</span>
                           </div>
                         ))}
@@ -625,8 +643,17 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl relative border border-slate-100 flex flex-col items-center text-center">
                 <div className="h-20 w-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mb-6 border border-amber-100"><AlertTriangle size={40} /></div>
-                <h3 className="text-xl font-black text-slate-900 mb-2 italic tracking-tighter uppercase">{itemToDelete.type === 'attachment' ? 'Remover anexo?' : itemToDelete.type === 'activity' ? 'Apagar interação?' : 'Excluir Oportunidade?'}</h3>
-                <p className="text-sm text-slate-500 mb-8 font-medium px-4 leading-relaxed">{itemToDelete.type === 'deal' ? 'Você está prestes a apagar todo o card desta oportunidade. Isso é irreversível.' : 'Você está prestes a apagar este item definitivamente. Deseja continuar?'}</p>
+                <h3 className="text-xl font-black text-slate-900 mb-2 italic tracking-tighter uppercase">
+                  {itemToDelete.type === 'attachment' ? 'Remover anexo?' : 
+                   itemToDelete.type === 'activity' ? 'Apagar interação?' : 
+                   itemToDelete.type === 'deal' ? 'Excluir Oportunidade?' : 
+                   'Excluir Responsável?'}
+                </h3>
+                <p className="text-sm text-slate-500 mb-8 font-medium px-4 leading-relaxed">
+                  {itemToDelete.type === 'deal' ? 'Você está prestes a apagar todo o card desta oportunidade. Isso é irreversível.' : 
+                   itemToDelete.type === 'contact' ? `Você está prestes a excluir "${itemToDelete.data.name}" permanentemente do cadastro deste cliente. Deseja continuar?` :
+                   'Você está prestes a apagar este item definitivamente. Deseja continuar?'}
+                </p>
                 <div className="flex gap-3 w-full">
                     <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setItemToDelete(null); }} disabled={isDeleting} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors">CANCELAR</button>
                     <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteConfirm(); }} disabled={isDeleting} className="flex-1 py-4 bg-[#e53935] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-red-200 disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-700 transition-colors">{isDeleting ? <Loader2 size={16} className="animate-spin" /> : 'APAGAR'}</button>

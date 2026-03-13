@@ -475,6 +475,29 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
       } else if (itemToDelete.type === 'deal' && onDeleteDeal) {
         await onDeleteDeal(itemToDelete.data.id);
         setIsEditModalOpen(false);
+      } else if (itemToDelete.type === 'contact' && onUpdateClient) {
+        const { contactId, clientId } = itemToDelete.data;
+        const client = clients.find(c => c.id === clientId);
+        if (client) {
+          const updatedContacts = (client.contacts || []).filter(c => c.id !== contactId);
+          const updatedFarms = (client.farms || []).map(f => ({
+            ...f,
+            contacts: (f.contacts || []).filter(c => c.id !== contactId)
+          }));
+          
+          const updatedClient = { ...client, contacts: updatedContacts, farms: updatedFarms };
+          await onUpdateClient(updatedClient);
+          
+          // Também remove do editDealData se estiver aberto
+          if (editDealData && editDealData.contactIds?.includes(contactId)) {
+            const idx = editDealData.contactIds.indexOf(contactId);
+            const newIds = [...editDealData.contactIds];
+            const newNames = [...(editDealData.contactNames || [])];
+            newIds.splice(idx, 1);
+            newNames.splice(idx, 1);
+            setEditDealData({ ...editDealData, contactIds: newIds, contactNames: newNames });
+          }
+        }
       }
       setItemToDelete(null);
     } catch (error) {
@@ -813,18 +836,36 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
                                         {(editDealData.contactNames || []).map((name, idx) => (
                                             <span key={idx} className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border border-blue-100 flex items-center gap-1">
                                                 {name}
-                                                <button 
-                                                    onClick={() => {
-                                                        const newIds = [...(editDealData.contactIds || [])];
-                                                        const newNames = [...(editDealData.contactNames || [])];
-                                                        newIds.splice(idx, 1);
-                                                        newNames.splice(idx, 1);
-                                                        setEditDealData({...editDealData, contactIds: newIds, contactNames: newNames});
-                                                    }}
-                                                    className="hover:text-red-500 ml-1"
-                                                >
-                                                    <X size={10} />
-                                                </button>
+                                                <div className="flex items-center gap-0.5 ml-1 border-l border-blue-200 pl-1">
+                                                    <button 
+                                                        onClick={() => {
+                                                            const newIds = [...(editDealData.contactIds || [])];
+                                                            const newNames = [...(editDealData.contactNames || [])];
+                                                            newIds.splice(idx, 1);
+                                                            newNames.splice(idx, 1);
+                                                            setEditDealData({...editDealData, contactIds: newIds, contactNames: newNames});
+                                                        }}
+                                                        className="hover:text-slate-600 text-blue-400 transition-colors"
+                                                        title="Remover do Negócio"
+                                                    >
+                                                        <X size={10} />
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => {
+                                                            const contactId = editDealData.contactIds?.[idx];
+                                                            if (contactId) {
+                                                                setItemToDelete({
+                                                                    type: 'contact' as any,
+                                                                    data: { contactId, name, clientId: editDealData.clientId }
+                                                                });
+                                                            }
+                                                        }}
+                                                        className="hover:text-red-500 text-blue-400 transition-colors"
+                                                        title="Excluir Responsável do Cadastro"
+                                                    >
+                                                        <Trash2 size={10} />
+                                                    </button>
+                                                </div>
                                             </span>
                                         ))}
                                     </div>
@@ -1547,8 +1588,17 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/90 backdrop-blur-sm animate-fade-in">
             <div className="bg-white rounded-[2.5rem] w-full max-w-sm p-8 shadow-2xl relative border border-slate-100 flex flex-col items-center text-center">
                 <div className="h-20 w-20 bg-amber-50 text-amber-500 rounded-full flex items-center justify-center mb-6 border border-amber-100"><AlertTriangle size={40} /></div>
-                <h3 className="text-xl font-black text-slate-900 mb-2 italic tracking-tighter uppercase">{itemToDelete.type === 'attachment' ? 'Remover anexo?' : itemToDelete.type === 'activity' ? 'Apagar interação?' : 'Excluir Oportunidade?'}</h3>
-                <p className="text-sm text-slate-500 mb-8 font-medium px-4 leading-relaxed">{itemToDelete.type === 'deal' ? 'Você está prestes a apagar todo o card desta oportunidade. Isso é irreversível.' : 'Você está prestes a apagar este item definitivamente. Deseja continuar?'}</p>
+                <h3 className="text-xl font-black text-slate-900 mb-2 italic tracking-tighter uppercase">
+                  {itemToDelete.type === 'attachment' ? 'Remover anexo?' : 
+                   itemToDelete.type === 'activity' ? 'Apagar interação?' : 
+                   itemToDelete.type === 'deal' ? 'Excluir Oportunidade?' : 
+                   'Excluir Responsável?'}
+                </h3>
+                <p className="text-sm text-slate-500 mb-8 font-medium px-4 leading-relaxed">
+                  {itemToDelete.type === 'deal' ? 'Você está prestes a apagar todo o card desta oportunidade. Isso é irreversível.' : 
+                   itemToDelete.type === 'contact' ? `Você está prestes a excluir "${itemToDelete.data.name}" permanentemente do cadastro deste cliente. Deseja continuar?` :
+                   'Você está prestes a apagar este item definitivamente. Deseja continuar?'}
+                </p>
                 <div className="flex gap-3 w-full">
                     <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setItemToDelete(null); }} disabled={isDeleting} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors">CANCELAR</button>
                     <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteConfirm(); }} disabled={isDeleting} className="flex-1 py-4 bg-[#e53935] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-red-200 disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-700 transition-colors">{isDeleting ? <Loader2 size={16} className="animate-spin" /> : 'APAGAR'}</button>
