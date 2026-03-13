@@ -9,6 +9,7 @@ import {
   Paperclip, Video, ImageIcon, FileText, Camera, Package, Briefcase, CalendarCheck,
   Archive, Trash2, ExternalLink, AlertTriangle, Coins, MessageCircle
 } from 'lucide-react';
+import { ClientEditModal } from '../components/ClientEditModal';
 import { Button } from '../components/Button';
 import { summarizeVisitAudio } from '../services/geminiService';
 import { uploadVisitFile, deleteVisitPhoto } from '../services/storageService';
@@ -43,7 +44,6 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const isFactory = client.type === 'Fábrica';
   const [activeTab, setActiveTab] = useState<'timeline' | 'deals' | 'herd'>(initialTab);
   const [isEditingClient, setIsEditingClient] = useState(false);
-  const [clientEditData, setClientEditData] = useState<Client>({ ...client });
   const [isInteractionModalOpen, setIsInteractionModalOpen] = useState(false);
   
   const isAdmin = user && (user.email === 'l.rigolin@zorionan.com' || user.role === 'Admin');
@@ -75,7 +75,8 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { setClientEditData({ ...client }); }, [client]);
+  const [isQuickAddProductOpen, setIsQuickAddProductOpen] = useState(false);
+  const [quickAddName, setQuickAddName] = useState('');
 
   const clientDeals = useMemo(() => deals.filter(d => d.clientId === client.id), [deals, client.id]);
   const activePotentialUSD = useMemo(() => clientDeals.filter(d => d.status === 'Open').reduce((acc, d) => acc + d.value, 0), [clientDeals]);
@@ -89,23 +90,27 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const handleProductChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     if (val === 'NEW_PRODUCT') {
-      const name = prompt("Nome do novo produto:");
-      if (name && onAddCatalogItem) {
-        const newItem: CatalogItem = {
-          id: `prod_${Date.now()}`,
-          name: name.trim(),
-          type: 'product',
-          active: true,
-          properties: {},
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        onAddCatalogItem(newItem);
-        setProduct(newItem.name);
-      }
+      setQuickAddName('');
+      setIsQuickAddProductOpen(true);
     } else {
       setProduct(val);
     }
+  };
+
+  const handleConfirmQuickAddProduct = () => {
+    if (!quickAddName.trim() || !onAddCatalogItem) return;
+    const newItem: CatalogItem = {
+      id: `prod_${Date.now()}`,
+      name: quickAddName.trim(),
+      type: 'product',
+      active: true,
+      properties: {},
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    onAddCatalogItem(newItem);
+    setProduct(newItem.name);
+    setIsQuickAddProductOpen(false);
   };
 
   const handleSaveQuickVisit = async () => {
@@ -173,8 +178,11 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     }
   };
 
-  const handleSaveClientChanges = () => {
-    onUpdateClient(clientEditData);
+  const handleSaveClientChanges = (updatedClient: Client) => {
+    onUpdateClient({
+        ...updatedClient,
+        updatedAt: new Date().toISOString()
+    });
     setIsEditingClient(false);
   };
 
@@ -272,26 +280,57 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                   <div className={`h-16 w-16 text-white rounded-[1.8rem] flex items-center justify-center ${isFactory ? 'bg-blue-600' : 'bg-zorion-900'}`}>{isFactory ? <Factory size={32} /> : <Beef size={32} />}</div>
                   <button onClick={() => setIsEditingClient(true)} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 hover:text-blue-600 transition-colors"><Pencil size={18} /></button>
                 </div>
-                <div className="space-y-5">
+                <div className="space-y-6">
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 italic leading-none">{client.farmName}</h3>
-                    <p className="text-[11px] font-bold text-slate-400 mt-1 uppercase flex items-center gap-2"><UserIcon size={12} /> {client.name}</p>
+                    <h3 className="text-xl font-black text-slate-900 italic leading-none">{client.name}</h3>
+                    <p className="text-[11px] font-bold text-slate-400 mt-1 uppercase flex items-center gap-2"><Phone size={12} /> {client.phone}</p>
                   </div>
+
+                  {/* RESPONSÁVEIS DO CLIENTE */}
+                  {client.contacts && client.contacts.length > 0 && (
+                    <div className="p-5 bg-blue-50/50 rounded-[2rem] border border-blue-100 space-y-3">
+                      <p className="text-[9px] font-black uppercase text-blue-600 mb-1 flex items-center gap-1"><Users size={10} /> Responsáveis</p>
+                      <div className="space-y-2">
+                        {client.contacts.map((contact) => (
+                          <div key={contact.id} className="flex justify-between items-center">
+                            <span className="text-[10px] font-bold text-slate-700">{contact.name}</span>
+                            <span className="text-[9px] font-black text-blue-600 uppercase bg-blue-100 px-2 py-0.5 rounded-md">{contact.role}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* LISTA DE FAZENDAS NA LATERAL */}
+                  <div className="space-y-4">
+                    {(client.farms || []).map((farm) => (
+                      <div key={farm.id} className="p-5 bg-slate-50 rounded-[2rem] border border-slate-100 space-y-3">
+                        <div className="flex justify-between items-start">
+                          <h4 className="text-sm font-black text-slate-800 uppercase italic tracking-tight">{farm.name}</h4>
+                          <span className="text-[9px] font-black bg-white px-2 py-1 rounded-lg border border-slate-200 text-slate-400 uppercase">{farm.herdSize} cab.</span>
+                        </div>
+                        
+                        {farm.location?.address && (
+                          <p className="text-[10px] text-slate-500 flex items-center gap-1"><MapPin size={10} /> {farm.location.address}</p>
+                        )}
+
+                        <div className="space-y-2 pt-2 border-t border-slate-200/50">
+                          {(farm.contacts || []).map((contact) => (
+                            <div key={contact.id} className="flex justify-between items-center">
+                              <span className="text-[10px] font-bold text-slate-700">{contact.name}</span>
+                              <span className="text-[9px] font-black text-zorion-600 uppercase bg-zorion-50 px-2 py-0.5 rounded-md">{contact.role}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
                   <div className="p-5 bg-emerald-50 rounded-[2rem] border border-emerald-100 shadow-inner">
                       <p className="text-[9px] font-black uppercase text-emerald-600 mb-1 flex items-center gap-1"><Coins size={10} /> Potencial Ativo</p>
                       <div className="flex flex-col">
                         <p className="font-black italic tracking-tighter text-2xl text-blue-900 mt-1.5 flex items-center gap-2">$ {activePotentialUSD.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} <span className="text-[8px] opacity-60 uppercase bg-blue-100 px-1.5 rounded">USD</span></p>
                       </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                      <p className="text-[9px] font-black text-slate-400 uppercase mb-1">Rebanho</p>
-                      <p className="text-lg font-black text-slate-800 italic leading-none">{client.herdSize}</p>
-                    </div>
-                    <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
-                      <p className="text-[9px] font-black text-emerald-600 uppercase mb-1">Nutrição</p>
-                      <p className="text-lg font-black text-slate-800 italic leading-none">{client.treatedHerdSize || 0}</p>
-                    </div>
                   </div>
                 </div>
           </div>
@@ -365,7 +404,10 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                     <div className="flex flex-col">
                                         <div className="flex items-center gap-2">
                                             {item.type === 'Whatsapp' && <MessageCircle size={16} className="text-green-500" />}
-                                            <h4 className="font-black text-slate-800 text-lg italic leading-tight">{item.itemType === 'visit' ? item.purpose : item.title}</h4>
+                                            <h4 className="font-black text-slate-800 text-lg italic leading-tight">
+                                                {item.itemType === 'visit' ? item.purpose : item.title}
+                                                {item.contactName && <span className="text-xs font-bold text-slate-400 ml-2 not-italic">({item.contactName})</span>}
+                                            </h4>
                                         </div>
                                         {item.product && (
                                             <span className="text-[10px] font-black text-zorion-600 uppercase tracking-widest mt-1 flex items-center gap-1">
@@ -449,48 +491,12 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       </div>
 
       {isEditingClient && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-            <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-8 shadow-2xl relative border border-slate-100 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-2xl font-black text-slate-900 italic tracking-tighter">Editar Cliente</h3>
-                    <button onClick={() => setIsEditingClient(false)} className="p-3 bg-slate-100 rounded-full text-slate-400 hover:text-red-500 transition-colors"><X size={20} /></button>
-                </div>
-                
-                <div className="space-y-5">
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome da Unidade</label>
-                        <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={clientEditData.farmName} onChange={e => setClientEditData({...clientEditData, farmName: e.target.value})} />
-                    </div>
-                    <div className="space-y-1">
-                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Responsável</label>
-                        <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={clientEditData.name} onChange={e => setClientEditData({...clientEditData, name: e.target.value})} />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone</label>
-                            <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={clientEditData.phone} onChange={e => setClientEditData({...clientEditData, phone: e.target.value})} />
-                         </div>
-                         <div className="space-y-1">
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{isFactory ? 'Capacidade' : 'Rebanho'}</label>
-                            <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={clientEditData.herdSize} onChange={e => setClientEditData({...clientEditData, herdSize: Number(e.target.value)})} />
-                         </div>
-                    </div>
-                    <div className="space-y-1">
-                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nutrição / Tratados</label>
-                         <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={clientEditData.treatedHerdSize} onChange={e => setClientEditData({...clientEditData, treatedHerdSize: Number(e.target.value)})} />
-                    </div>
-                    
-                    <div className="space-y-1 pt-2">
-                         <LocationPicker value={clientEditData.location} onChange={(loc) => setClientEditData({...clientEditData, location: loc})} />
-                    </div>
-
-                    <div className="flex gap-3 pt-6">
-                        <Button onClick={() => setIsEditingClient(false)} variant="outline" className="flex-1 rounded-2xl text-xs font-black uppercase">Cancelar</Button>
-                        <Button onClick={handleSaveClientChanges} className="flex-1 rounded-2xl text-xs font-black uppercase">Salvar</Button>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <ClientEditModal 
+            isOpen={isEditingClient}
+            onClose={() => setIsEditingClient(false)}
+            client={client}
+            onSave={handleSaveClientChanges}
+        />
       )}
 
       {isInteractionModalOpen && (
@@ -624,6 +630,36 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                 <div className="flex gap-3 w-full">
                     <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setItemToDelete(null); }} disabled={isDeleting} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-slate-200 transition-colors">CANCELAR</button>
                     <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleDeleteConfirm(); }} disabled={isDeleting} className="flex-1 py-4 bg-[#e53935] text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-red-200 disabled:opacity-50 flex items-center justify-center gap-2 hover:bg-red-700 transition-colors">{isDeleting ? <Loader2 size={16} className="animate-spin" /> : 'APAGAR'}</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Quick Add Product Modal */}
+      {isQuickAddProductOpen && (
+        <div className="fixed inset-0 z-[3000] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2rem] w-full max-w-sm p-8 shadow-2xl relative border border-slate-100">
+                <h3 className="text-lg font-black text-slate-900 mb-4 italic uppercase">Novo Produto</h3>
+                <input 
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500 mb-4"
+                    placeholder="Nome do Produto..."
+                    value={quickAddName}
+                    onChange={(e) => setQuickAddName(e.target.value)}
+                    autoFocus
+                />
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => setIsQuickAddProductOpen(false)}
+                        className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-xs uppercase hover:bg-slate-200"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={handleConfirmQuickAddProduct}
+                        className="flex-1 py-3 bg-zorion-900 text-white rounded-xl font-black text-xs uppercase hover:bg-zorion-800"
+                    >
+                        Confirmar
+                    </button>
                 </div>
             </div>
         </div>

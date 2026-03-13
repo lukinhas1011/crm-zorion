@@ -40,7 +40,7 @@ export default function WhatsAppSimulator() {
           Simulador de WhatsApp
         </h1>
         <p className="text-gray-500">
-          Teste o fluxo de mensagens e IA sem depender do Twilio ou bloqueios de rede.
+          Teste o fluxo de mensagens sem depender do Twilio ou bloqueios de rede.
         </p>
       </div>
 
@@ -96,7 +96,7 @@ export default function WhatsAppSimulator() {
           <div className="space-y-1">
             <h3 className="font-medium text-green-900">Sucesso!</h3>
             <p className="text-sm text-green-700">
-              A mensagem foi enviada para o backend. Verifique os logs para ver o processamento da IA.
+              A mensagem foi enviada para o backend. Verifique a aba de WhatsApp para ver a mensagem.
             </p>
             <pre className="mt-2 text-xs bg-white/50 p-2 rounded border border-green-100 overflow-x-auto">
               {JSON.stringify(response, null, 2)}

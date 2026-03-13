@@ -13,6 +13,7 @@ export const COLLECTIONS = {
   PRICE_TABLES: 'price_tables',
   FEEDBACK: 'feedback',
   TODOS: 'todos',
+  WHATSAPP_MESSAGES: 'whatsapp_messages',
 } as const;
 
 export const prepareForSave = (data: any, isNew: boolean = false) => {

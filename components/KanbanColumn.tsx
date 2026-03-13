@@ -1,8 +1,8 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Stage, Deal, Activity } from '../types';
 import { DealCard } from './DealCard';
-import { ArrowRight, LayoutGrid } from 'lucide-react';
+import { ArrowRight, LayoutGrid, Pencil, Check, X } from 'lucide-react';
 
 interface KanbanColumnProps {
   stage: Stage;
@@ -16,15 +16,31 @@ interface KanbanColumnProps {
   onWon?: (deal: Deal) => void;
   onLost?: (deal: Deal) => void;
   onRevert?: (deal: Deal) => void;
+  onUpdateStage?: (stage: Stage) => void;
 }
 
 const COLORS = ['bg-zorion-600', 'bg-blue-600', 'bg-indigo-600', 'bg-emerald-600', 'bg-amber-600'];
 
 export const KanbanColumn: React.FC<KanbanColumnProps> = ({ 
-  stage, deals, activities, index, onMoveDeal, onDealClick, showCreator = false, onDealUpdate, onWon, onLost, onRevert
+  stage, deals, activities, index, onMoveDeal, onDealClick, showCreator = false, onDealUpdate, onWon, onLost, onRevert, onUpdateStage
 }) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedName, setEditedName] = useState(stage.name);
+
   const totalValue = deals.reduce((sum, d) => sum + d.value, 0);
   const colorClass = COLORS[index % COLORS.length];
+
+  const handleSaveName = () => {
+    if (editedName.trim() && onUpdateStage) {
+      onUpdateStage({ ...stage, name: editedName.trim() });
+    }
+    setIsEditing(false);
+  };
+
+  const handleCancel = () => {
+    setEditedName(stage.name);
+    setIsEditing(false);
+  };
 
   return (
     <div 
@@ -36,10 +52,38 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
       }}
     >
       {/* Header Estilo Pipedrive (Visível apenas em Desktop ou como Resumo no Mobile) */}
-      <div className="hidden md:flex flex-none p-5 bg-white border-b border-slate-200 relative min-h-[110px] flex-col justify-center shadow-sm">
-        <h4 className="font-black text-slate-800 text-[11px] leading-tight uppercase tracking-tight mb-1.5">
-          {stage.name}
-        </h4>
+      <div className="hidden md:flex flex-none p-5 bg-white border-b border-slate-200 relative min-h-[110px] flex-col justify-center shadow-sm group/header">
+        <div className="flex items-center justify-between mb-1.5">
+          {isEditing ? (
+            <div className="flex items-center gap-1 w-full">
+              <input 
+                type="text" 
+                className="font-black text-slate-800 text-[11px] leading-tight uppercase tracking-tight border-b border-zorion-500 outline-none w-full bg-slate-50 px-1 py-0.5"
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveName();
+                  if (e.key === 'Escape') handleCancel();
+                }}
+              />
+              <button onClick={handleSaveName} className="text-emerald-600 hover:text-emerald-700"><Check size={12} /></button>
+              <button onClick={handleCancel} className="text-red-600 hover:text-red-700"><X size={12} /></button>
+            </div>
+          ) : (
+            <>
+              <h4 className="font-black text-slate-800 text-[11px] leading-tight uppercase tracking-tight">
+                {stage.name}
+              </h4>
+              <button 
+                onClick={() => setIsEditing(true)}
+                className="opacity-0 group-hover/header:opacity-100 transition-opacity p-1 hover:bg-slate-100 rounded text-slate-400"
+              >
+                <Pencil size={10} />
+              </button>
+            </>
+          )}
+        </div>
         <div className="text-[10px] text-slate-400 font-black uppercase tracking-tighter">
           R$ {totalValue.toLocaleString('pt-BR')} • {deals.length} {deals.length === 1 ? 'NEGÓCIO' : 'NEGÓCIOS'}
         </div>
@@ -50,7 +94,27 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
       <div className="md:hidden px-3 py-2 flex justify-between items-center bg-slate-50 border-b border-slate-200 mb-2 rounded-xl mx-2 mt-2">
          <div className="flex items-center gap-2">
             <div className={`h-2 w-2 rounded-full ${colorClass}`}></div>
-            <span className="text-[10px] font-black text-slate-800 uppercase tracking-tight">{stage.name}</span>
+            {isEditing ? (
+              <input 
+                type="text" 
+                className="text-[10px] font-black text-slate-800 uppercase tracking-tight border-b border-zorion-500 outline-none bg-transparent"
+                value={editedName}
+                onChange={(e) => setEditedName(e.target.value)}
+                autoFocus
+                onBlur={handleSaveName}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveName();
+                  if (e.key === 'Escape') handleCancel();
+                }}
+              />
+            ) : (
+              <span 
+                className="text-[10px] font-black text-slate-800 uppercase tracking-tight"
+                onClick={() => setIsEditing(true)}
+              >
+                {stage.name}
+              </span>
+            )}
          </div>
          <span className="text-[9px] font-bold text-slate-400">{deals.length}</span>
       </div>

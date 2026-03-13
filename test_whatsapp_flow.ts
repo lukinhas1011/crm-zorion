@@ -3,6 +3,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore, collection, getDocs, query, where, addDoc } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth'; // Import Auth
 import { processWhatsAppMessage } from './services/whatsappService';
+import { Client } from './types';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -81,7 +82,7 @@ async function runTest() {
         return;
     }
 
-    const client = clientsSnap.docs[0].data();
+    const client = clientsSnap.docs[0].data() as Client;
     console.log(`Cliente encontrado para contexto: ${client.name} (Fazenda: ${client.farmName})`);
 
     // 3. Simular Mensagem

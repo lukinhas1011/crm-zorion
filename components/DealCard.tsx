@@ -38,16 +38,14 @@ export const DealCard: React.FC<DealCardProps> = ({
 
   const isGenericTitle = isGeneric(rawTitle);
 
-  // Título Secundário (Menor, Cinza) -> Deal Title (Suplementação Global)
-  let displayTitle = rawTitle;
-  if (isGenericTitle) {
-      displayTitle = '';
-  }
+  // Lógica de nomes: Empresa/Cooperativa grande (main), Título/Fazenda pequeno (secondary)
+  let mainDisplayName = deal.clientName || deal.farmName || 'Cliente sem nome';
+  let secondaryDisplayName = '';
 
-  // Nome Principal (Maior, Escuro) -> Nome da Unidade (Farm Name)
-  let mainDisplayName = deal.farmName;
-  if (isGeneric(mainDisplayName)) {
-      mainDisplayName = deal.clientName || 'Unidade sem nome';
+  if (!isGenericTitle && rawTitle !== mainDisplayName) {
+      secondaryDisplayName = rawTitle;
+  } else if (deal.farmName && deal.farmName !== mainDisplayName) {
+      secondaryDisplayName = deal.farmName;
   }
 
   // Cálculos de Moeda
@@ -86,19 +84,20 @@ export const DealCard: React.FC<DealCardProps> = ({
       <div className="flex flex-col gap-2 md:gap-3 pl-1 md:pl-0">
         <div className="flex justify-between items-start">
           <div className="flex flex-col min-w-0 pr-1 md:pr-2">
-             {/* Título secundário (se não for genérico) */}
-             {displayTitle && (
+             {/* Nome Secundário (Menor, Cinza) */}
+             {secondaryDisplayName && (
                <span className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5 md:mb-1 truncate italic">
-                 {displayTitle}
+                 {secondaryDisplayName}
                </span>
              )}
-             {/* Nome do Cliente */}
+             {/* Nome Principal (Maior, Escuro) */}
              <h5 className="font-black text-slate-800 text-xs md:text-sm leading-tight tracking-tight uppercase line-clamp-2 italic">
                {mainDisplayName}
              </h5>
           </div>
           <button 
             onClick={handleEditClick}
+            onMouseDown={(e) => e.stopPropagation()}
             className="p-1 md:p-1.5 text-slate-200 group-hover:text-zorion-600 transition-all hover:bg-slate-50 rounded-lg"
           >
              <Pencil size={12} className="w-3 h-3 md:w-auto md:h-auto" />
@@ -123,9 +122,16 @@ export const DealCard: React.FC<DealCardProps> = ({
           <div className="h-5 w-5 md:h-6 md:w-6 bg-white rounded-md md:rounded-lg flex items-center justify-center border border-slate-100 shrink-0 shadow-sm">
              <User size={10} className="text-slate-400 md:w-3 md:h-3" />
           </div>
-          <span className="text-[9px] md:text-[10px] font-black text-slate-600 truncate uppercase flex-1 italic">
-            {deal.clientName}
-          </span>
+          <div className="flex flex-col flex-1 min-w-0">
+            <span className="text-[9px] md:text-[10px] font-black text-slate-600 truncate uppercase italic">
+              {deal.contactNames && deal.contactNames.length > 0 ? deal.contactNames.join(', ') : 'Sem responsável'}
+            </span>
+            {deal.farmName && (
+              <span className="text-[7px] md:text-[8px] font-bold text-slate-400 truncate uppercase">
+                {deal.farmName}
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex justify-between items-end pt-2 mt-1 border-t border-slate-50">
@@ -170,12 +176,10 @@ export const DealCard: React.FC<DealCardProps> = ({
             {onWon && (
               <button 
                 type="button"
-                draggable={false}
-                onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => { 
                   e.stopPropagation(); 
-                  if (onWon) onWon(deal); 
+                  onWon(deal); 
                 }}
                 className="flex-1 py-2 md:py-2.5 bg-emerald-600 text-white rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase hover:bg-emerald-700 active:scale-95 transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer border-none"
               >
@@ -185,12 +189,10 @@ export const DealCard: React.FC<DealCardProps> = ({
             {onLost && (
               <button 
                 type="button"
-                draggable={false}
-                onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => { 
                   e.stopPropagation(); 
-                  if (onLost) onLost(deal); 
+                  onLost(deal); 
                 }}
                 className="flex-1 py-2 md:py-2.5 bg-red-600 text-white rounded-lg md:rounded-xl text-[9px] md:text-[10px] font-black uppercase hover:bg-red-700 active:scale-95 transition-all flex items-center justify-center gap-1 shadow-sm cursor-pointer border-none"
               >
@@ -200,8 +202,6 @@ export const DealCard: React.FC<DealCardProps> = ({
             {onRevert && deal.customAttributes?.transferredFromSales && (
               <button 
                 type="button"
-                draggable={false}
-                onPointerDown={(e) => e.stopPropagation()}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => { 
                   e.stopPropagation(); 

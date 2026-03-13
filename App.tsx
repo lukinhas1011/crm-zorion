@@ -20,6 +20,7 @@ import PriceTablePage from './pages/PriceTablePage';
 import FeedbackList from './pages/FeedbackList';
 import Profile from './pages/Profile';
 import IntegrationTest from './pages/IntegrationTest';
+import WhatsAppInbox from './pages/WhatsAppInbox';
 import { User, Client, Visit, CatalogItem, Deal, Stage, Pipeline, Activity, Language, Translator } from './types';
 import { Beef, Loader2 } from 'lucide-react';
 
@@ -170,7 +171,9 @@ const AppContent: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    console.log("Setting up Auth Listener...");
     const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
+      console.log("Auth State Changed:", firebaseUser ? "User Logged In" : "No User");
       if (firebaseUser) {
         try {
           const userDoc = await getDoc(doc(db, COLLECTIONS.USERS, firebaseUser.uid));
@@ -199,6 +202,7 @@ const AppContent: React.FC = () => {
       } else {
         setUser(null);
       }
+      console.log("Setting isAuthenticating to false");
       setIsAuthenticating(false);
     });
 
@@ -249,34 +253,22 @@ const AppContent: React.FC = () => {
 
     const unsubStages = onSnapshot(query(collection(db, COLLECTIONS.STAGES), orderBy('order', 'asc')), async (snap) => {
       const stgs = snap.docs.map(d => ({ ...d.data(), id: d.id } as Stage));
-      // Atualizado conforme solicitação: Separar Validação de Negociação
-      const newStageNames = ['Cliente potencial', 'Estabelecimento de oportunidade', 'Validação', 'Negociação Comercial'];
-      const currentNames = stgs.map(s => s.name);
-      // Verifica se precisa atualizar (se os nomes ou a quantidade mudaram)
-      const isCorrect = stgs.length === newStageNames.length && JSON.stringify(currentNames) === JSON.stringify(newStageNames);
-
-      if (snap.empty || !isCorrect) {
-        console.log("Atualizando estágios do funil...");
+      
+      if (snap.empty) {
+        console.log("Inicializando estágios do funil...");
         const batch = writeBatch(db);
+        const defaultStageNames = ['Cliente potencial', 'Estabelecimento de oportunidade', 'Validação', 'Negociação Comercial'];
         
-        // Se houver mais estágios antigos do que novos, deleta os extras
-        snap.docs.forEach(d => {
-            if (!newStageNames.includes(d.data().name) && parseInt(d.id.split('_')[1]) > newStageNames.length) {
-                batch.delete(d.ref);
-            }
-        });
-
-        newStageNames.forEach((name, idx) => {
+        defaultStageNames.forEach((name, idx) => {
           const sid = `stg_${idx + 1}`;
           const newStage: Stage = { 
               id: sid, 
               pipelineId: 'pip_principal', 
               name, 
               order: idx + 1, 
-              probability: (idx + 1) * 20 // Ajustado probabilidade (20, 40, 60, 80)
+              probability: (idx + 1) * 20
           };
-          // Usa set com merge para não perder outros campos se existirem, mas garante o nome e ordem
-          batch.set(doc(db, COLLECTIONS.STAGES, sid), prepareForSave(newStage, true), { merge: true });
+          batch.set(doc(db, COLLECTIONS.STAGES, sid), prepareForSave(newStage, true));
         });
         await batch.commit();
       } else {
@@ -322,7 +314,8 @@ const AppContent: React.FC = () => {
   };
 
   const handleAddClient = async (client: Client) => {
-    const finalClient = { ...client, assignedTechnicianId: client.assignedTechnicianId || user?.id };
+    const finalId = client.id || `cli_${Date.now()}`;
+    const finalClient = { ...client, id: finalId, assignedTechnicianId: client.assignedTechnicianId || user?.id };
     await setDoc(doc(db, COLLECTIONS.CLIENTS, finalClient.id), prepareForSave(finalClient, true));
   };
 
@@ -375,6 +368,10 @@ const AppContent: React.FC = () => {
     await setDoc(doc(db, COLLECTIONS.CATALOG, item.id), prepareForSave(item, true));
   };
 
+  const handleUpdateStage = async (stage: Stage) => {
+    await updateDoc(doc(db, COLLECTIONS.STAGES, stage.id), prepareForSave(stage, false));
+  };
+
   const handleSelectClient = (id: string) => {
     setSelectedClientId(id);
     setActivePage('client_details');
@@ -389,8 +386,10 @@ const AppContent: React.FC = () => {
   if (isAuthenticating) {
     return (
       <div className="min-h-screen bg-zorion-950 flex flex-col items-center justify-center p-8">
+        <div className="text-zorion-400 mb-4">Carregando...</div>
         <Loader2 className="animate-spin text-zorion-400 h-12 w-12 mb-4" />
         <h1 className="text-white font-black italic text-2xl tracking-tighter uppercase">Sincronizando Zorion...</h1>
+        <p className="text-white/50 text-xs mt-4">Se esta tela persistir, verifique sua conexão.</p>
       </div>
     );
   }
@@ -406,11 +405,11 @@ const AppContent: React.FC = () => {
   const renderPage = () => {
     switch (activePage) {
       case 'dashboard': return <Dashboard clients={clients} visits={visits} user={user} onNavigate={handleNavigate} onSelectClient={handleSelectClient} deals={deals} activities={activities} {...commonProps} />;
-      case 'sales': return <SalesFunnel deals={deals} stages={stages} pipelines={pipelines} activities={activities} clients={clients} catalog={catalog} user={user} onAddDeal={handleAddDeal} onUpdateDeal={handleUpdateDeal} onDeleteDeal={handleDeleteDeal} onAddVisit={handleAddVisit} onSelectClient={handleSelectClient} pendingDealId={pageContext?.dealId} createForClientId={pageContext?.createFor} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onDeleteActivity={handleDeleteActivity} onAddCatalogItem={handleAddCatalogItem} {...commonProps} />;
+      case 'sales': return <SalesFunnel deals={deals} stages={stages} pipelines={pipelines} activities={activities} clients={clients} catalog={catalog} user={user} onAddDeal={handleAddDeal} onUpdateDeal={handleUpdateDeal} onDeleteDeal={handleDeleteDeal} onAddVisit={handleAddVisit} onSelectClient={handleSelectClient} pendingDealId={pageContext?.dealId} createForClientId={pageContext?.createFor} initialNotes={pageContext?.initialNotes} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onDeleteActivity={handleDeleteActivity} onAddCatalogItem={handleAddCatalogItem} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onUpdateStage={handleUpdateStage} {...commonProps} />;
       case 'production_funnel': return <ProductionFunnel deals={deals} activities={activities} clients={clients} visits={visits} catalog={catalog} user={user} onAddDeal={handleAddDeal} onUpdateDeal={handleUpdateDeal} onDeleteDeal={handleDeleteDeal} onSelectClient={handleSelectClient} onAddVisit={handleAddVisit} onUpdateClient={handleUpdateClient} onAddCatalogItem={handleAddCatalogItem} pendingDealId={pageContext?.dealId} createForClientId={pageContext?.createFor} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onDeleteActivity={handleDeleteActivity} {...commonProps} />;
       case 'map': return <MapPage clients={clients} visits={visits} onSelectClient={handleSelectClient} user={user} />;
-      case 'clients': return <Clients clients={clients} visits={visits} deals={deals} activities={activities} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onSelectClient={handleSelectClient} onNavigate={handleNavigate} user={user} />;
-      case 'new_visit': return <NewVisit clients={clients} catalog={catalog} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onAddVisit={handleAddVisit} onAddCatalogItem={handleAddCatalogItem} onComplete={() => setActivePage('dashboard')} user={user} />;
+      case 'clients': return <Clients clients={clients} visits={visits} deals={deals} activities={activities} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onSelectClient={handleSelectClient} onNavigate={handleNavigate} user={user} pageContext={pageContext} />;
+      case 'new_visit': return <NewVisit clients={clients} catalog={catalog} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onAddVisit={handleAddVisit} onAddCatalogItem={handleAddCatalogItem} onComplete={() => setActivePage('dashboard')} user={user} deals={deals} onAddActivity={handleAddActivity} onAddDeal={handleAddDeal} />;
       case 'price_table': return <PriceTablePage user={user} />;
       case 'client_details':
         const targetClientId = pageContext?.clientId || selectedClientId;
@@ -437,6 +436,7 @@ const AppContent: React.FC = () => {
           {...commonProps}
         />;
       case 'visits': return <Visits visits={visits} clients={clients} onSelectClient={handleSelectClient} onUpdateVisit={handleUpdateVisit} onDeleteVisit={handleDeleteVisit} />;
+      case 'whatsapp_inbox': return <WhatsAppInbox clients={clients} user={user} onNavigate={handleNavigate} />;
       case 'nutrition': return <Nutrition />;
       case 'feedback_list': return <FeedbackList />;
       case 'profile': return <Profile user={user} onUpdateUser={setUser} />;

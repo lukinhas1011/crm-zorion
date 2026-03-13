@@ -3,11 +3,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Client, Deal, Activity, Visit, User } from '../types';
 import { Button } from '../components/Button';
 import { LocationPicker } from '../components/LocationPicker';
+import { ClientEditModal } from '../components/ClientEditModal';
 import { 
   Search, MapPin, Phone, Plus, ChevronRight, Beef, Factory,
   MoreHorizontal, DollarSign, Pencil, Calendar,
   User as UserIcon, Building2, Filter, Mail, CheckCircle2, Clock, ChevronDown, Settings2,
-  RotateCw, X, Tag, Star, DownloadCloud, Loader2, GitMerge, ArrowRightLeft, Users, Trash2, AlertTriangle
+  RotateCw, X, Star, DownloadCloud, Loader2, GitMerge, ArrowRightLeft, Users, Trash2, AlertTriangle
 } from 'lucide-react';
 import { collection, getDocs, writeBatch, doc, deleteDoc, updateDoc, query, orderBy } from 'firebase/firestore';
 import { db, dbEstoque } from '../services/firebase';
@@ -23,10 +24,11 @@ interface ClientsProps {
   onSelectClient: (clientId: string) => void;
   onNavigate: (page: string, extra?: any) => void;
   user: User;
+  pageContext?: any;
 }
 
 const Clients: React.FC<ClientsProps> = ({ 
-  clients, visits, deals, activities, onAddClient, onUpdateClient, onSelectClient, onNavigate, user 
+  clients, visits, deals, activities, onAddClient, onUpdateClient, onSelectClient, onNavigate, user, pageContext 
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -57,20 +59,20 @@ const Clients: React.FC<ClientsProps> = ({
     id: '',
     type: 'Fazenda',
     name: '',
+    contacts: [],
     phone: '',
     farmName: '',
     herdSize: 0,
     treatedHerdSize: 0,
     location: { lat: 0, lng: 0, address: '' },
     lots: [],
-    tags: [],
     status: 'Ativo',
     createdAt: '',
-    updatedAt: ''
+    updatedAt: '',
+    farms: []
   };
 
   const [clientForm, setClientForm] = useState<Client>(defaultClientState);
-  const [tagInput, setTagInput] = useState('');
 
   // Fetch Users for Admin (SOMENTE BANCO ATUAL)
   useEffect(() => {
@@ -98,6 +100,18 @@ const Clients: React.FC<ClientsProps> = ({
         fetchUsers();
     }
   }, [isAdmin]);
+
+  useEffect(() => {
+    if (pageContext?.newClientPhone || pageContext?.newClientName) {
+      setClientForm({
+        ...defaultClientState,
+        phone: pageContext.newClientPhone || '',
+        name: pageContext.newClientName || '',
+      });
+      setIsEditing(false);
+      setIsModalOpen(true);
+    }
+  }, [pageContext]);
 
   // Helper seguro para strings
   const safeString = (val: any) => {
@@ -390,37 +404,42 @@ const Clients: React.FC<ClientsProps> = ({
         name: safeString(client.name),
         farmName: safeString(client.farmName),
         phone: safeString(client.phone),
-        tags: client.tags || [] 
+        farms: client.farms || []
     });
     setIsEditing(true);
     setIsModalOpen(true);
   };
 
-  const handleAddTag = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && tagInput.trim()) {
-        e.preventDefault();
-        if (!clientForm.tags?.includes(tagInput.trim())) {
-            setClientForm(prev => ({ ...prev, tags: [...(prev.tags || []), tagInput.trim()] }));
-        }
-        setTagInput('');
-    }
-  };
-
-  const removeTag = (tagToRemove: string) => {
-    setClientForm(prev => ({ ...prev, tags: prev.tags?.filter(t => t !== tagToRemove) }));
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!clientForm.farmName) {
-        alert("O nome da unidade/fazenda é obrigatório.");
+    if (!clientForm.name) {
+        alert("O nome do cliente/fábrica é obrigatório.");
         return;
+    }
+
+    // Se não houver fazendas, cria uma padrão com os dados do topo (compatibilidade)
+    let finalFarms = clientForm.farms || [];
+    if (finalFarms.length === 0) {
+        finalFarms = [{
+            id: `farm_${Date.now()}`,
+            name: clientForm.farmName || 'Fazenda Principal',
+            location: clientForm.location,
+            herdSize: clientForm.herdSize,
+            treatedHerdSize: clientForm.treatedHerdSize,
+            lots: clientForm.lots || [],
+            contacts: [{
+                id: `cont_${Date.now()}`,
+                name: clientForm.name,
+                role: 'Proprietário'
+            }]
+        }];
     }
 
     const finalClientData = {
         ...clientForm,
         name: safeString(clientForm.name),
-        farmName: safeString(clientForm.farmName),
+        farmName: finalFarms[0]?.name || safeString(clientForm.farmName),
+        farms: finalFarms,
         updatedAt: new Date().toISOString()
     };
 
@@ -435,9 +454,13 @@ const Clients: React.FC<ClientsProps> = ({
 
   const filteredClients = clients.filter(c => {
     const cName = safeString(c.name).toLowerCase();
-    const cFarm = safeString(c.farmName).toLowerCase();
     const search = safeString(searchTerm).toLowerCase();
-    const matchesSearch = cName.includes(search) || cFarm.includes(search);
+    
+    // Busca em fazendas e contatos
+    const farmMatch = c.farms?.some(f => safeString(f.name).toLowerCase().includes(search));
+    const contactMatch = c.farms?.some(f => f.contacts?.some(cont => safeString(cont.name).toLowerCase().includes(search)));
+    
+    const matchesSearch = cName.includes(search) || farmMatch || contactMatch;
     
     const matchesTech = !selectedTechnicianFilter || 
         c.assignedTechnicianId === selectedTechnicianFilter || 
@@ -533,7 +556,7 @@ const Clients: React.FC<ClientsProps> = ({
                   {isAdmin ? "Técnico(s) Responsável(is)" : "Unidade / Fazenda"}
               </th>
               <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100">
-                  {isAdmin ? "Unidade / Contato" : "Responsável"}
+                  {isAdmin ? "Unidade / Responsável" : "Responsável"}
               </th>
               <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100 text-center">Negócios</th>
               <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Próxima Atividade</th>
@@ -546,7 +569,7 @@ const Clients: React.FC<ClientsProps> = ({
               const isSynced = (client as any).originSystem === 'estoque_zorion';
 
               return (
-                <tr key={client.id} onClick={() => onNavigate('client-details', { clientId: client.id, initialTab: 'deals' })} className="group hover:bg-blue-50/40 cursor-pointer transition-colors">
+                <tr key={client.id} onClick={() => onNavigate('client_details', { clientId: client.id, initialTab: 'deals' })} className="group hover:bg-blue-50/40 cursor-pointer transition-colors">
                   <td className="px-4 py-3 text-center">
                     {client.type === 'Fábrica' ? <Factory size={16} className="text-blue-600" /> : <Beef size={16} className="text-emerald-600" />}
                   </td>
@@ -567,20 +590,32 @@ const Clients: React.FC<ClientsProps> = ({
                           </button>
                       </td>
                   ) : (
-                      <td className="px-4 py-3 border-r border-slate-50 text-sm font-bold text-slate-600 flex items-center gap-2">
-                          {client.farmName}
-                          {isSynced && <span title="Importado" className="flex h-1.5 w-1.5 bg-blue-500 rounded-full"></span>}
+                      <td className="px-4 py-3 border-r border-slate-50">
+                          <p className="text-sm font-bold text-slate-700">{client.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
+                            {client.farms?.length || 0} {client.farms?.length === 1 ? 'Fazenda' : 'Fazendas'}
+                          </p>
+                          {isSynced && <span title="Importado" className="flex h-1.5 w-1.5 bg-blue-500 rounded-full mt-1"></span>}
                       </td>
                   )}
 
                   {/* ADMIN: Exibe Unidade e Responsável juntos para não perder info */}
                   {isAdmin ? (
                       <td className="px-4 py-3 border-r border-slate-50">
-                          <p className="text-sm font-bold text-slate-700">{client.farmName}</p>
-                          <p className="text-[10px] text-slate-400 font-medium">{client.name}</p>
+                          <p className="text-sm font-bold text-slate-700">{client.name}</p>
+                          <p className="text-[10px] text-slate-400 font-medium">
+                            {client.farms?.length || 0} Fazenda(s)
+                          </p>
                       </td>
                   ) : (
-                      <td className="px-4 py-3 border-r border-slate-50 text-sm font-bold text-slate-700">{client.name}</td>
+                      <td className="px-4 py-3 border-r border-slate-50">
+                        <p className="text-sm font-bold text-slate-700">
+                            {client.farms?.[0]?.contacts?.[0]?.name || client.name}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium italic">
+                            {client.farms?.[0]?.contacts?.[0]?.role || 'Proprietário'}
+                        </p>
+                      </td>
                   )}
 
                   <td className="px-4 py-3 border-r border-slate-50 text-center font-bold text-slate-700 text-xs">{openDeals}</td>
@@ -611,81 +646,19 @@ const Clients: React.FC<ClientsProps> = ({
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-lg p-8 shadow-2xl relative border border-slate-100 animate-fade-in max-h-[90vh] overflow-y-auto custom-scrollbar">
-            <div className="flex justify-between items-center mb-6">
-               <h3 className="text-2xl font-black text-slate-900 italic tracking-tighter">
-                   {isEditing ? 'Editar Unidade' : 'Novo Cadastro'}
-               </h3>
-               <button onClick={() => setIsModalOpen(false)} className="p-3 bg-slate-100 text-slate-400 hover:text-red-500 hover:bg-slate-200 rounded-full transition-all"><X size={20} /></button>
-            </div>
-            <form onSubmit={handleSubmit} className="space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tipo de Unidade</label>
-                    <div className="flex gap-2">
-                        <button type="button" onClick={() => setClientForm({...clientForm, type: 'Fazenda'})} className={`flex-1 py-3 rounded-2xl border-2 font-bold text-xs flex items-center justify-center gap-2 transition-all ${clientForm.type === 'Fazenda' ? 'bg-emerald-50 border-emerald-500 text-emerald-700 shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>
-                            <Beef size={16} /> FAZENDA
-                        </button>
-                        <button type="button" onClick={() => setClientForm({...clientForm, type: 'Fábrica'})} className={`flex-1 py-3 rounded-2xl border-2 font-bold text-xs flex items-center justify-center gap-2 transition-all ${clientForm.type === 'Fábrica' ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-md' : 'bg-white border-slate-100 text-slate-400'}`}>
-                            <Factory size={16} /> FÁBRICA
-                        </button>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Telefone</label>
-                    <input className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" placeholder="(00) 0000-0000" value={clientForm.phone} onChange={e => setClientForm({...clientForm, phone: e.target.value})} />
-                  </div>
-              </div>
-              
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Responsável</label>
-                <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={clientForm.name} onChange={e => setClientForm({...clientForm, name: e.target.value})} placeholder="Ex: Fernando Barra" />
-              </div>
-              
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome da Unidade</label>
-                <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={clientForm.farmName} onChange={e => setClientForm({...clientForm, farmName: e.target.value})} placeholder="Ex: BioRação Industrial" />
-              </div>
-              
-              <div className="space-y-1">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">{clientForm.type === 'Fábrica' ? 'Capacidade (Ton)' : 'Rebanho'}</label>
-                  <input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={clientForm.herdSize} onChange={e => setClientForm({...clientForm, herdSize: Number(e.target.value)})} />
-              </div>
-
-              <div className="space-y-1 pt-2">
-                 <LocationPicker 
-                   value={clientForm.location} 
-                   onChange={(loc) => setClientForm({...clientForm, location: loc})} 
-                   label="Localização da Unidade"
-                 />
-              </div>
-
-              <div className="space-y-2 pt-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Tags de Segmentação</label>
-                <div className="flex items-center gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-100 flex-wrap">
-                    {clientForm.tags?.map((tag, idx) => (
-                        <span key={idx} className="px-3 py-1 bg-white border border-slate-200 rounded-full text-[10px] font-bold text-slate-600 flex items-center gap-1">
-                            {tag} <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500"><X size={12} /></button>
-                        </span>
-                    ))}
-                    <input 
-                        className="flex-1 min-w-[100px] bg-transparent outline-none text-xs font-medium" 
-                        placeholder="Digite e enter..." 
-                        value={tagInput}
-                        onChange={e => setTagInput(e.target.value)}
-                        onKeyDown={handleAddTag}
-                    />
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-6">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-4 text-xs font-black uppercase text-slate-500 hover:bg-slate-50 rounded-2xl transition-all border border-transparent hover:border-slate-200">Cancelar</button>
-                <button type="submit" className="flex-1 py-4 bg-[#004d2c] text-white rounded-2xl text-xs font-black uppercase shadow-xl hover:bg-[#003d22] transition-all">{isEditing ? 'Salvar Alterações' : 'Criar Unidade'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ClientEditModal 
+            isOpen={isModalOpen}
+            onClose={() => setIsModalOpen(false)}
+            client={clientForm}
+            onSave={(finalClientData) => {
+                if (isEditing) {
+                    onUpdateClient(finalClientData);
+                } else {
+                    onAddClient(finalClientData);
+                }
+                setIsModalOpen(false);
+            }}
+        />
       )}
 
       {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO */}

@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { Deal, Stage, Pipeline, Activity, Client, User, CatalogItem, Visit, Attachment, DealProduct } from '../types';
 import { 
   Plus, X, Building2, Trash2, ChevronDown, 
@@ -8,6 +8,7 @@ import {
   AlertTriangle, Beef, Package, Target, Coins, Camera, ImageIcon, Pencil, FileText, Search, UserPlus, Check, Video, ExternalLink,
   Archive, Trophy, ThumbsDown, Mic, ArrowRight, FlaskConical
 } from 'lucide-react';
+import { ClientEditModal } from '../components/ClientEditModal';
 import { Button } from '../components/Button';
 import { KanbanColumn } from '../components/KanbanColumn';
 import { uploadVisitFile, deleteVisitPhoto } from '../services/storageService';
@@ -31,25 +32,21 @@ interface SalesFunnelProps {
   onAddCatalogItem?: (item: CatalogItem) => void;
   pendingDealId?: string;
   createForClientId?: string;
+  initialNotes?: string;
   onAddActivity: (activity: Activity) => void;
   onUpdateActivity?: (activity: Activity) => void;
   onDeleteActivity?: (activityId: string) => void;
+  onUpdateClient?: (client: Client) => void;
+  onUpdateStage?: (stage: Stage) => void;
   currencyMode?: 'BRL' | 'USD';
   exchangeRate?: number;
 }
 
 const FIXED_PIPELINE_ID = 'pip_principal';
-const FIXED_STAGES: Stage[] = [
-  { id: 'stg_1', pipelineId: FIXED_PIPELINE_ID, name: 'Cliente potencial', order: 1, probability: 20 },
-  { id: 'stg_2', pipelineId: FIXED_PIPELINE_ID, name: 'Estabelecimento de oportunidade', order: 2, probability: 40 },
-  { id: 'stg_3', pipelineId: FIXED_PIPELINE_ID, name: 'Validação de negociação', order: 3, probability: 60 },
-  { id: 'stg_4', pipelineId: FIXED_PIPELINE_ID, name: 'Negociação Comercial', order: 4, probability: 80 },
-  { id: 'stg_5', pipelineId: FIXED_PIPELINE_ID, name: 'Validação Comercial', order: 5, probability: 100 }
-];
 
 const SalesFunnel: React.FC<SalesFunnelProps> = ({ 
   deals, stages, pipelines, activities, clients, catalog, user, 
-  onAddDeal, onUpdateDeal, onDeleteDeal, onAddVisit, onSelectClient, onAddCatalogItem, pendingDealId, createForClientId, onAddActivity, onUpdateActivity, onDeleteActivity,
+  onAddDeal, onUpdateDeal, onDeleteDeal, onAddVisit, onSelectClient, onAddCatalogItem, pendingDealId, createForClientId, initialNotes, onAddActivity, onUpdateActivity, onDeleteActivity, onUpdateClient, onUpdateStage,
   currencyMode = 'USD', exchangeRate = 1
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -59,14 +56,13 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
   
   // States para o Modal de Seleção de Cliente
   const [isSelectionModalOpen, setIsSelectionModalOpen] = useState(false);
-  const [isCreatingClient, setIsCreatingClient] = useState(false);
+  const [isNewClientModalOpen, setIsNewClientModalOpen] = useState(false);
   const [clientSearch, setClientSearch] = useState('');
-  const [newClientData, setNewClientData] = useState({ name: '', farmName: '' });
-  const [isSavingClient, setIsSavingClient] = useState(false);
 
   // States para Novo Produto (Modal)
   const [isNewProductModalOpen, setIsNewProductModalOpen] = useState(false);
   const [newProductName, setNewProductName] = useState('');
+  const [isEditingClientModalOpen, setIsEditingClientModalOpen] = useState(false);
 
   const [itemToDelete, setItemToDelete] = useState<{type: 'attachment' | 'activity' | 'deal', data: any} | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -96,6 +92,59 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
   const [lossFiles, setLossFiles] = useState<File[]>([]);
   const [isSavingLoss, setIsSavingLoss] = useState(false);
 
+  const [isQuickAddFarmOpen, setIsQuickAddFarmOpen] = useState(false);
+  const [isQuickAddContactOpen, setIsQuickAddContactOpen] = useState(false);
+  const [quickAddName, setQuickAddName] = useState('');
+  const [quickAddRole, setQuickAddRole] = useState('Gerente');
+
+  const openDealModalForClient = useCallback((client: Client) => {
+    const newDeal: Deal = {
+        id: `deal_${Date.now()}`,
+        title: 'Nova Oportunidade',
+        clientId: client.id,
+        clientName: client.name,
+        farmName: client.farmName,
+        pipelineId: FIXED_PIPELINE_ID,
+        stageId: stages[0]?.id || 'stg_1',
+        value: 0,
+        currency: 'USD',
+        status: 'Open',
+        creatorId: user.id,
+        creatorName: user.name,
+        contactIds: [],
+        contactNames: [],
+        products: [],
+        lastStageChangeDate: new Date().toISOString(),
+        ownerName: user.name,
+        visibility: 'Team',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        description: initialNotes || ''
+    };
+    setEditDealData(newDeal);
+    setQuickFiles([]);
+    // Reset date to current when opening
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    setInteractionDate(now.toISOString().slice(0, 16));
+    setIsEditModalOpen(true);
+  }, [initialNotes, user.id, user.name]);
+
+  useEffect(() => {
+    if (createForClientId) {
+      const client = clients.find(c => c.id === createForClientId);
+      if (client) {
+        openDealModalForClient(client);
+      }
+    } else if (pendingDealId) {
+      const deal = deals.find(d => d.id === pendingDealId);
+      if (deal) {
+        setEditDealData(deal);
+        setIsEditModalOpen(true);
+      }
+    }
+  }, [createForClientId, pendingDealId, clients, deals, openDealModalForClient]);
+
   const [view, setView] = useState<'funnel' | 'archive'>('funnel');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -107,9 +156,8 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
   // Abre o modal de seleção antes do modal de Deal
   const handleStartNewDeal = () => {
     setIsSelectionModalOpen(true);
-    setIsCreatingClient(false);
+    setIsNewClientModalOpen(false);
     setClientSearch('');
-    setNewClientData({ name: '', farmName: '' });
   };
 
   const handleSelectExistingClient = (client: Client) => {
@@ -117,72 +165,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
     openDealModalForClient(client);
   };
 
-  const handleCreateAndSelectClient = async () => {
-    if (!newClientData.name || !newClientData.farmName) return;
-    setIsSavingClient(true);
-    try {
-        const newClientId = `cli_${Date.now()}`;
-        const newClient: Client = {
-            id: newClientId,
-            type: 'Fazenda',
-            name: newClientData.name,
-            farmName: newClientData.farmName,
-            phone: '',
-            email: '',
-            location: { lat: 0, lng: 0, address: '' },
-            herdSize: 0,
-            treatedHerdSize: 0,
-            lots: [],
-            tags: [],
-            status: 'Ativo',
-            assignedTechnicianId: user.id,
-            assignedTechnicianIds: [user.id],
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        };
 
-        // Salvar diretamente no Firebase
-        await setDoc(doc(db, COLLECTIONS.CLIENTS, newClientId), prepareForSave(newClient, true));
-        
-        setIsSelectionModalOpen(false);
-        openDealModalForClient(newClient);
-    } catch (error) {
-        console.error("Erro ao criar cliente rápido:", error);
-        alert("Erro ao criar cliente.");
-    } finally {
-        setIsSavingClient(false);
-    }
-  };
-
-  const openDealModalForClient = (client: Client) => {
-    const newDeal: Deal = {
-        id: `deal_${Date.now()}`,
-        title: 'Nova Oportunidade',
-        clientId: client.id,
-        clientName: client.name,
-        farmName: client.farmName,
-        pipelineId: FIXED_PIPELINE_ID,
-        stageId: FIXED_STAGES[0].id,
-        value: 0,
-        currency: 'USD',
-        status: 'Open',
-        creatorId: user.id,
-        creatorName: user.name,
-        products: [],
-        lastStageChangeDate: new Date().toISOString(),
-        ownerName: user.name,
-        visibility: 'Team',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-    };
-    setEditDealData(newDeal);
-    setQuickFiles([]);
-    // Reset date to current when opening
-    const now = new Date();
-    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
-    setInteractionDate(now.toISOString().slice(0, 16));
-    setIsEditModalOpen(true);
-  };
 
   const handleSaveDeal = () => {
     if (!editDealData) return;
@@ -229,13 +212,10 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
   }, [dealToMarkAsWon, onUpdateDeal]);
 
   const handleLostDealClick = useCallback((deal: Deal) => {
-    const dealTitle = deal.title || deal.farmName || 'esta oportunidade';
-    if (window.confirm(`Tem certeza que deseja marcar a oportunidade "${dealTitle}" como PERDIDA?`)) {
-        setDealToMarkAsLost(deal);
-        setLossReason('');
-        setLossFiles([]);
-        setIsLossModalOpen(true);
-    }
+    setDealToMarkAsLost(deal);
+    setLossReason('');
+    setLossFiles([]);
+    setIsLossModalOpen(true);
   }, []);
 
   const handleReopenDeal = useCallback((deal: Deal) => {
@@ -309,6 +289,49 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
         setIsSavingLoss(false);
     }
   }, [dealToMarkAsLost, lossReason, lossFiles, onAddActivity, onUpdateDeal, user.id]);
+
+  const handleConfirmQuickAddFarm = () => {
+    if (!quickAddName.trim() || !editDealData?.clientId) return;
+    const newFarmId = `farm_${Date.now()}`;
+    const newFarm = {
+        id: newFarmId,
+        name: quickAddName,
+        location: { lat: 0, lng: 0, address: '' },
+        herdSize: 0,
+        lots: [],
+        contacts: []
+    };
+    const client = clients.find(c => c.id === editDealData.clientId);
+    if (client && onUpdateClient) {
+        const updatedClient = { ...client, farms: [...(client.farms || []), newFarm] };
+        onUpdateClient(updatedClient);
+        setEditDealData({
+            ...editDealData, 
+            farmId: newFarmId, 
+            farmName: quickAddName,
+            contactIds: [],
+            contactNames: []
+        });
+    }
+    setIsQuickAddFarmOpen(false);
+  };
+
+  const handleConfirmQuickAddContact = () => {
+    if (!quickAddName.trim() || !editDealData?.clientId) return;
+    const newContactId = `cont_${Date.now()}`;
+    const newContact = { id: newContactId, name: quickAddName, role: quickAddRole || 'Gerente' };
+    const client = clients.find(c => c.id === editDealData.clientId);
+    if (client && onUpdateClient) {
+        const updatedClient = { ...client, contacts: [...(client.contacts || []), newContact] };
+        onUpdateClient(updatedClient);
+        setEditDealData({
+            ...editDealData, 
+            contactIds: [...(editDealData.contactIds || []), newContactId], 
+            contactNames: [...(editDealData.contactNames || []), quickAddName]
+        });
+    }
+    setIsQuickAddContactOpen(false);
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -464,11 +487,11 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
 
   const filteredDeals = useMemo(() => {
     return deals.filter(d => {
-      const isFromSalesPipeline = FIXED_STAGES.some(s => s.id === d.stageId);
+      const isFromSalesPipeline = stages.some(s => s.id === d.stageId);
       const matchesSearch = d.title.toLowerCase().includes(searchTerm.toLowerCase()) || d.farmName.toLowerCase().includes(searchTerm.toLowerCase());
       return d.status === 'Open' && matchesSearch && isFromSalesPipeline;
     });
-  }, [deals, searchTerm]);
+  }, [deals, searchTerm, stages]);
 
   const archivedDeals = useMemo(() => {
     return deals.filter(d => {
@@ -524,7 +547,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {view === 'funnel' ? (
           <div className="flex-1 flex overflow-x-auto p-2 md:p-4 gap-2 md:gap-4 snap-x snap-mandatory md:snap-none">
-            {FIXED_STAGES.map((stage, idx) => (
+            {stages.map((stage, idx) => (
                <div key={stage.id} className="snap-center h-full">
                    <KanbanColumn 
                      stage={stage} index={idx} 
@@ -535,6 +558,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
                      onDealUpdate={onUpdateDeal}
                      onWon={handleWonDeal}
                      onLost={handleLostDealClick}
+                     onUpdateStage={onUpdateStage}
                    />
                </div>
             ))}
@@ -627,97 +651,59 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
             <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl relative border border-slate-100 flex flex-col max-h-[85vh]">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-black text-slate-900 italic tracking-tighter uppercase">
-                        {isCreatingClient ? 'Novo Cliente' : 'Selecionar Cliente'}
+                        Selecionar Cliente
                     </h3>
                     <button onClick={() => setIsSelectionModalOpen(false)} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
                 </div>
 
-                {!isCreatingClient ? (
-                    <div className="flex flex-col gap-4">
-                        <div className="relative">
-                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                            <input 
-                                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:border-zorion-500" 
-                                placeholder="Buscar cliente existente..."
-                                value={clientSearch}
-                                onChange={(e) => setClientSearch(e.target.value)}
-                                autoFocus
-                            />
-                        </div>
-                        
-                        <div className="flex-1 overflow-y-auto max-h-60 custom-scrollbar space-y-2">
-                            {clients.filter(c => 
-                                c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
-                                c.farmName.toLowerCase().includes(clientSearch.toLowerCase())
-                            ).map(c => (
-                                <button 
-                                    key={c.id} 
-                                    onClick={() => handleSelectExistingClient(c)}
-                                    className="w-full p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between hover:border-zorion-500 hover:shadow-md transition-all text-left group"
-                                >
-                                    <div>
-                                        <h4 className="font-black text-slate-800 text-sm">{c.farmName}</h4>
-                                        <p className="text-[10px] font-bold text-slate-400 uppercase">{c.name}</p>
-                                    </div>
-                                    <div className="h-8 w-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 group-hover:bg-zorion-900 group-hover:text-white transition-colors">
-                                        <Check size={14} />
-                                    </div>
-                                </button>
-                            ))}
-                            {clientSearch && clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase())).length === 0 && (
-                                <p className="text-center text-slate-400 text-xs font-bold py-4">Nenhum cliente encontrado</p>
-                            )}
-                        </div>
+                <div className="flex flex-col gap-4">
+                    <div className="relative">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <input 
+                            className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:border-zorion-500" 
+                            placeholder="Buscar cliente existente..."
+                            value={clientSearch}
+                            onChange={(e) => setClientSearch(e.target.value)}
+                            autoFocus
+                        />
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto max-h-60 custom-scrollbar space-y-2">
+                        {clients.filter(c => 
+                            c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
+                            c.farmName.toLowerCase().includes(clientSearch.toLowerCase())
+                        ).map(c => (
+                            <button 
+                                key={c.id} 
+                                onClick={() => handleSelectExistingClient(c)}
+                                className="w-full p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between hover:border-zorion-500 hover:shadow-md transition-all text-left group"
+                            >
+                                <div>
+                                    <h4 className="font-black text-slate-800 text-sm">{c.farmName}</h4>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase">{c.name}</p>
+                                </div>
+                                <div className="h-8 w-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 group-hover:bg-zorion-900 group-hover:text-white transition-colors">
+                                    <Check size={14} />
+                                </div>
+                            </button>
+                        ))}
+                        {clientSearch && clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase())).length === 0 && (
+                            <p className="text-center text-slate-400 text-xs font-bold py-4">Nenhum cliente encontrado</p>
+                        )}
+                    </div>
 
-                        <div className="border-t border-slate-100 pt-4 mt-2">
-                            <button 
-                                onClick={() => setIsCreatingClient(true)}
-                                className="w-full py-4 bg-emerald-50 text-emerald-700 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 hover:bg-emerald-100 transition-colors"
-                            >
-                                <UserPlus size={16} /> Cadastrar Novo Cliente Agora
-                            </button>
-                        </div>
+                    <div className="border-t border-slate-100 pt-4 mt-2">
+                        <button 
+                            onClick={() => {
+                                setIsSelectionModalOpen(false);
+                                setIsNewClientModalOpen(true);
+                            }}
+                            className="w-full py-4 bg-emerald-50 text-emerald-700 rounded-2xl font-black text-xs uppercase flex items-center justify-center gap-2 hover:bg-emerald-100 transition-colors"
+                        >
+                            <UserPlus size={16} /> Cadastrar Novo Cliente Agora
+                        </button>
                     </div>
-                ) : (
-                    <div className="flex flex-col gap-4">
-                        <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome da Unidade/Fazenda</label>
-                            <input 
-                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500 mt-1"
-                                placeholder="Ex: Fazenda Santa Fé"
-                                value={newClientData.farmName}
-                                onChange={e => setNewClientData({...newClientData, farmName: e.target.value})}
-                                autoFocus
-                            />
-                        </div>
-                        <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Responsável</label>
-                            <input 
-                                className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500 mt-1"
-                                placeholder="Ex: João da Silva"
-                                value={newClientData.name}
-                                onChange={e => setNewClientData({...newClientData, name: e.target.value})}
-                            />
-                        </div>
-                        
-                        <div className="flex gap-3 mt-4">
-                            <button 
-                                onClick={() => setIsCreatingClient(false)}
-                                className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black text-xs uppercase hover:bg-slate-200 transition-colors"
-                            >
-                                Voltar
-                            </button>
-                            <button 
-                                onClick={handleCreateAndSelectClient}
-                                disabled={isSavingClient || !newClientData.name || !newClientData.farmName}
-                                className="flex-1 py-4 bg-zorion-900 text-white rounded-2xl font-black text-xs uppercase shadow-lg hover:bg-zorion-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                                {isSavingClient ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
-                                Salvar e Continuar
-                            </button>
-                        </div>
-                    </div>
-                )}
+                </div>
             </div>
         </div>
       )}
@@ -727,59 +713,215 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
           <div className="bg-white md:rounded-[2.5rem] w-full max-w-7xl shadow-2xl relative flex flex-col h-full md:h-[94vh] border border-slate-100 overflow-hidden">
              
              {/* Header do Modal */}
-             <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center shrink-0">
-                <div className="flex items-center gap-4 flex-1">
-                    <div className="h-14 w-14 bg-[#009b58] rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0">
+             <div className="px-8 py-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center shrink-0 gap-6">
+                
+                {/* Left Side: Icon + Dropdowns */}
+                <div className="flex items-start gap-4 flex-1 w-full">
+                    <div className="h-14 w-14 bg-[#009b58] rounded-2xl flex items-center justify-center text-white shadow-lg shrink-0 mt-1">
                         <DollarSign size={28} />
                     </div>
-                    <div className="w-full max-w-md">
-                        <div className="flex items-center gap-2 mb-1">
-                            <select 
-                                className="bg-slate-50 border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 rounded-lg py-1 px-2 outline-none focus:border-zorion-500 w-full"
-                                value={editDealData.clientId}
-                                onChange={(e) => {
-                                    const c = clients.find(cl => cl.id === e.target.value);
-                                    if(c) setEditDealData({...editDealData, clientId: c.id, farmName: c.farmName, clientName: c.name});
-                                }}
-                            >
-                                <option value="" disabled>Selecione o Cliente</option>
-                                {clients.map(c => <option key={c.id} value={c.id}>{c.name} - {c.farmName}</option>)}
-                            </select>
-                            <span className="bg-[#e7f6f0] text-[#009b58] px-2 py-0.5 rounded text-[9px] font-black uppercase border border-[#c9ebd9] whitespace-nowrap">
-                                {isNewDeal ? 'Novo' : 'Oportunidade'}
-                            </span>
+                    
+                    <div className="flex flex-col gap-3 w-full max-w-lg">
+                        
+                        {/* Row 1: Client & Farm */}
+                        <div className="flex flex-col md:flex-row gap-3">
+                            {/* Client */}
+                            <div className="flex flex-col gap-1 flex-1 relative">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cooperativa / Cliente</label>
+                                <div className="flex items-center gap-1">
+                                    <select 
+                                        className="bg-slate-50 border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 rounded-lg py-1.5 px-2 outline-none focus:border-zorion-500 w-full"
+                                        value={editDealData.clientId}
+                                        onChange={(e) => {
+                                            const c = clients.find(cl => cl.id === e.target.value);
+                                            if(c) {
+                                                const firstFarm = c.farms?.[0];
+                                                setEditDealData({
+                                                    ...editDealData, 
+                                                    clientId: c.id, 
+                                                    clientName: c.name,
+                                                    farmId: firstFarm?.id || '',
+                                                    farmName: firstFarm?.name || '',
+                                                    contactIds: [],
+                                                    contactNames: []
+                                                });
+                                            }
+                                        }}
+                                    >
+                                        <option value="" disabled>Selecione o Cliente</option>
+                                        {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                    </select>
+                                    <button 
+                                        onClick={() => setIsEditingClientModalOpen(true)}
+                                        className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-zorion-600 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                                        title="Editar Cadastro do Cliente"
+                                    >
+                                        <Pencil size={12} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Farm */}
+                            {editDealData.clientId && (
+                                <div className="flex flex-col gap-1 flex-1">
+                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Unidade / Fazenda</label>
+                                    <div className="flex items-center gap-1">
+                                        <select 
+                                            className="bg-slate-50 border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 rounded-lg py-1.5 px-2 outline-none focus:border-zorion-500 w-full"
+                                            value={editDealData.farmId || ''}
+                                            onChange={(e) => {
+                                                const farmId = e.target.value;
+                                                const c = clients.find(cl => cl.id === editDealData?.clientId);
+                                                const f = c?.farms?.find(farm => farm.id === farmId);
+                                                if(f && editDealData) setEditDealData({
+                                                    ...editDealData, 
+                                                    farmId: f.id, 
+                                                    farmName: f.name,
+                                                    contactIds: f.contacts?.[0] ? [f.contacts[0].id] : [],
+                                                    contactNames: f.contacts?.[0] ? [f.contacts[0].name] : []
+                                                });
+                                            }}
+                                        >
+                                            <option value="" disabled>Selecione a Unidade</option>
+                                            {clients.find(c => c.id === editDealData.clientId)?.farms?.map(f => (
+                                                <option key={f.id} value={f.id}>{f.name}</option>
+                                            ))}
+                                        </select>
+                                        <button 
+                                            type="button"
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            onClick={() => {
+                                                setQuickAddName('');
+                                                setIsQuickAddFarmOpen(true);
+                                            }}
+                                            className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors border border-emerald-100 relative z-10"
+                                            title="Nova Unidade"
+                                        >
+                                            <Building2 size={12} className="pointer-events-none" />
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                        <input 
-                            className="text-2xl font-black text-slate-900 italic tracking-tighter uppercase leading-none bg-transparent outline-none w-full placeholder-slate-300"
-                            value={editDealData.title}
-                            onChange={(e) => setEditDealData({...editDealData, title: e.target.value})}
-                            placeholder="Nome da Negociação..."
-                        />
+
+                        {/* Row 2: Contact */}
+                        {editDealData.clientId && (
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Responsável</label>
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex flex-wrap gap-1">
+                                        {(editDealData.contactNames || []).map((name, idx) => (
+                                            <span key={idx} className="bg-blue-50 text-blue-600 px-2 py-0.5 rounded-lg text-[9px] font-black uppercase border border-blue-100 flex items-center gap-1">
+                                                {name}
+                                                <button 
+                                                    onClick={() => {
+                                                        const newIds = [...(editDealData.contactIds || [])];
+                                                        const newNames = [...(editDealData.contactNames || [])];
+                                                        newIds.splice(idx, 1);
+                                                        newNames.splice(idx, 1);
+                                                        setEditDealData({...editDealData, contactIds: newIds, contactNames: newNames});
+                                                    }}
+                                                    className="hover:text-red-500 ml-1"
+                                                >
+                                                    <X size={10} />
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <select 
+                                            className="bg-slate-50 border border-slate-200 text-[10px] font-black uppercase tracking-widest text-slate-700 rounded-lg py-1.5 px-2 outline-none focus:border-zorion-500 w-full md:w-1/2"
+                                            value=""
+                                            onChange={(e) => {
+                                                if (!editDealData) return;
+                                                const contactId = e.target.value;
+                                                const client = clients.find(cl => cl.id === editDealData.clientId);
+                                                if (!client) return;
+                                                
+                                                const allContacts = [
+                                                    ...(client.contacts || []),
+                                                    ...(client.farms || []).flatMap(f => f.contacts || [])
+                                                ];
+                                                
+                                                const cont = allContacts.find(contact => contact.id === contactId);
+                                                if(cont && !editDealData.contactIds?.includes(cont.id)) {
+                                                    setEditDealData({
+                                                        ...editDealData, 
+                                                        contactIds: [...(editDealData.contactIds || []), cont.id], 
+                                                        contactNames: [...(editDealData.contactNames || []), cont.name]
+                                                    });
+                                                }
+                                            }}
+                                        >
+                                            <option value="" disabled>+ Adicionar Responsável</option>
+                                            {(() => {
+                                                const client = clients.find(c => c.id === editDealData.clientId);
+                                                if (!client) return null;
+                                                const allContacts = [
+                                                    ...(client.contacts || []),
+                                                    ...(client.farms || []).flatMap(f => f.contacts || [])
+                                                ];
+                                                return allContacts.map(cont => (
+                                                    <option key={cont.id} value={cont.id}>{cont.name} ({cont.role})</option>
+                                                ));
+                                            })()}
+                                        </select>
+                                        <button 
+                                            type="button"
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            onClick={() => {
+                                                if (!editDealData) return;
+                                                setQuickAddName('');
+                                                setQuickAddRole('Gerente');
+                                                setIsQuickAddContactOpen(true);
+                                            }}
+                                            className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors border border-blue-100 relative z-10"
+                                            title="Novo Responsável"
+                                        >
+                                            <UserPlus size={12} className="pointer-events-none" />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
-                
-                <div className="flex items-center gap-8">
-                    <div className="text-right">
-                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor Total (Deal)</p>
-                        <div className="flex items-baseline justify-end gap-1">
-                            <span className="text-2xl font-black text-[#009b58] italic leading-none">$</span>
+
+                {/* Right Side: Title & Value */}
+                <div className="flex flex-col gap-4 w-full md:w-auto md:min-w-[300px] md:border-l md:border-slate-100 md:pl-8">
+                    <div className="flex justify-between items-start">
+                        <div className="flex flex-col w-full">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Nome da Oportunidade</label>
+                            <input 
+                                className="text-xl md:text-2xl font-black text-slate-900 italic tracking-tighter uppercase leading-none bg-transparent outline-none w-full placeholder-slate-300 border-b border-transparent focus:border-slate-200 pb-1 transition-colors"
+                                value={editDealData.title}
+                                onChange={(e) => setEditDealData({...editDealData, title: e.target.value})}
+                                placeholder="Ex: Negociação Q3..."
+                            />
+                        </div>
+                        <button onClick={() => setIsEditModalOpen(false)} className="p-1 text-slate-300 hover:text-slate-600 transition-colors ml-4 -mt-2 -mr-2"><X size={24}/></button>
+                    </div>
+                    
+                    <div className="flex flex-col">
+                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Valor Total (Deal)</p>
+                        <div className="flex items-baseline gap-1">
+                            <span className="text-2xl md:text-3xl font-black text-[#009b58] italic leading-none">$</span>
                             <input 
                                 type="number"
-                                className="text-2xl font-black text-[#009b58] italic bg-transparent outline-none w-48 text-right placeholder-emerald-200 py-1"
+                                className="text-2xl md:text-3xl font-black text-[#009b58] italic bg-transparent outline-none w-full placeholder-emerald-200 py-1"
                                 value={editDealData.value}
                                 onChange={(e) => setEditDealData({...editDealData, value: Number(e.target.value)})}
                                 placeholder="0,00"
                             />
                         </div>
                     </div>
-                    <button onClick={() => setIsEditModalOpen(false)} className="p-2 text-slate-300 hover:text-slate-600 transition-colors"><X size={32}/></button>
                 </div>
              </div>
 
              <div className="flex px-8 py-4 bg-slate-50/50 border-b border-slate-100 shrink-0 gap-1 overflow-x-auto">
-                {FIXED_STAGES.map((s, i) => {
+                {stages.map((s, i) => {
                     const isCurrent = editDealData.stageId === s.id;
-                    const isPast = FIXED_STAGES.findIndex(fs => fs.id === editDealData.stageId) > i;
+                    const isPast = stages.findIndex(fs => fs.id === editDealData.stageId) > i;
                     return (
                         <button 
                             key={s.id} 
@@ -962,6 +1104,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
                                         <div className="flex justify-between mb-2 pb-2 border-b border-slate-50">
                                             <span className="text-[10px] font-black uppercase text-slate-800 tracking-wide flex items-center gap-1.5">
                                               {act.type} 
+                                              {act.contactName && <span className="text-slate-400 ml-1">({act.contactName})</span>}
                                               {act.attachments?.length > 0 && <Paperclip size={10} className="text-slate-400" />}
                                             </span>
                                             <div className="flex items-center gap-2">
@@ -1269,6 +1412,134 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
                  </div>
               </div>
            </div>
+        </div>
+      )}
+
+      {isEditingClientModalOpen && editDealData.clientId && (
+        <ClientEditModal 
+            isOpen={isEditingClientModalOpen}
+            onClose={() => setIsEditingClientModalOpen(false)}
+            client={clients.find(c => c.id === editDealData.clientId)!}
+            onSave={(updatedClient) => {
+                if (onUpdateClient) {
+                    onUpdateClient(updatedClient);
+                    setIsEditingClientModalOpen(false);
+                }
+            }}
+        />
+      )}
+
+      {isNewClientModalOpen && (
+        <ClientEditModal 
+            isOpen={isNewClientModalOpen}
+            onClose={() => setIsNewClientModalOpen(false)}
+            client={{
+                id: '',
+                type: 'Fazenda',
+                name: '',
+                contacts: [],
+                farmName: '',
+                phone: '',
+                email: '',
+                herdSize: 0,
+                treatedHerdSize: 0,
+                location: { lat: 0, lng: 0, address: '' },
+                lots: [],
+                status: 'Ativo',
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                farms: [],
+                assignedTechnicianId: user.id,
+                assignedTechnicianIds: [user.id]
+            }}
+            onSave={async (newClient) => {
+                try {
+                    const finalClient = { ...newClient, id: newClient.id || `cli_${Date.now()}` };
+                    await setDoc(doc(db, COLLECTIONS.CLIENTS, finalClient.id), prepareForSave(finalClient, true));
+                    setIsNewClientModalOpen(false);
+                    openDealModalForClient(finalClient);
+                } catch (error) {
+                    console.error("Erro ao criar cliente:", error);
+                    alert("Erro ao criar cliente.");
+                }
+            }}
+        />
+      )}
+
+      {/* Quick Add Farm Modal */}
+      {isQuickAddFarmOpen && (
+        <div className="fixed inset-0 z-[1300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2rem] w-full max-w-sm p-8 shadow-2xl relative border border-slate-100">
+                <h3 className="text-lg font-black text-slate-900 mb-4 italic uppercase">Nova Unidade / Fazenda</h3>
+                <input 
+                    className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500 mb-4"
+                    placeholder="Nome da Fazenda..."
+                    value={quickAddName}
+                    onChange={(e) => setQuickAddName(e.target.value)}
+                    autoFocus
+                />
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => setIsQuickAddFarmOpen(false)}
+                        className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-xs uppercase hover:bg-slate-200"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={handleConfirmQuickAddFarm}
+                        className="flex-1 py-3 bg-zorion-900 text-white rounded-xl font-black text-xs uppercase hover:bg-zorion-800"
+                    >
+                        Confirmar
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Quick Add Contact Modal */}
+      {isQuickAddContactOpen && (
+        <div className="fixed inset-0 z-[1300] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2rem] w-full max-w-sm p-8 shadow-2xl relative border border-slate-100">
+                <h3 className="text-lg font-black text-slate-900 mb-4 italic uppercase">Novo Responsável</h3>
+                <div className="space-y-4">
+                    <div>
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome</label>
+                        <input 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500"
+                            placeholder="Nome do Responsável..."
+                            value={quickAddName}
+                            onChange={(e) => setQuickAddName(e.target.value)}
+                            autoFocus
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Cargo</label>
+                        <select 
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500"
+                            value={quickAddRole}
+                            onChange={(e) => setQuickAddRole(e.target.value)}
+                        >
+                            {['Gerente', 'Técnico', 'Vendedor', 'Consultor', 'Proprietário'].map(r => (
+                                <option key={r} value={r}>{r}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
+                <div className="flex gap-2 mt-6">
+                    <button 
+                        onClick={() => setIsQuickAddContactOpen(false)}
+                        className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-xl font-black text-xs uppercase hover:bg-slate-200"
+                    >
+                        Cancelar
+                    </button>
+                    <button 
+                        onClick={handleConfirmQuickAddContact}
+                        className="flex-1 py-3 bg-zorion-900 text-white rounded-xl font-black text-xs uppercase hover:bg-zorion-800"
+                    >
+                        Confirmar
+                    </button>
+                </div>
+            </div>
         </div>
       )}
 

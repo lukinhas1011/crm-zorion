@@ -563,7 +563,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                         <div>
                             <h3 className="text-lg font-black text-slate-900 italic tracking-tighter leading-tight">
-                                {selectedEvent.type === 'visit' ? 'Visita Técnica' : 'Atividade / Contato'}
+                                {selectedEvent.type === 'visit' ? 'Visita Técnica' : 'Atividade / Responsável'}
                             </h3>
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                                 {new Date(selectedEvent.date).toLocaleDateString()} • {new Date(selectedEvent.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}

@@ -34,7 +34,14 @@ export const storage = getStorage(app);
 export const auth = getAuth(app);
 
 // Analytics only on client side
-export const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
+export const analytics = typeof window !== 'undefined' ? (() => {
+  try {
+    return getAnalytics(app);
+  } catch (e) {
+    console.warn("Firebase Analytics failed to initialize:", e);
+    return null;
+  }
+})() : null;
 
 // Inicialização Secundária (Estoque)
 // O segundo parâmetro "estoqueZorionApp" é essencial para o Firebase gerenciar duas conexões ao mesmo tempo

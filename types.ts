@@ -35,10 +35,29 @@ export interface Lot {
   description?: string;
 }
 
+export interface Contact {
+  id: string;
+  name: string;
+  role: string; // Gerente, Técnico, Vendedor, Proprietário, etc.
+  phone?: string;
+  email?: string;
+}
+
+export interface Farm {
+  id: string;
+  name: string;
+  location: ClientLocation;
+  herdSize: number;
+  treatedHerdSize?: number;
+  lots: Lot[];
+  contacts: Contact[];
+}
+
 export interface Client extends BaseDocument {
   type: 'Fazenda' | 'Fábrica';
-  name: string;
-  farmName: string;
+  name: string; // Nome do Cliente/Fábrica (Entidade Principal)
+  contacts: Contact[];
+  farms: Farm[];
   phone: string;
   email?: string;
   location: ClientLocation;
@@ -48,8 +67,9 @@ export interface Client extends BaseDocument {
   lastVisitDate?: string;
   assignedTechnicianId?: string; // Mantido para compatibilidade (Gestor Principal)
   assignedTechnicianIds?: string[]; // Novo campo: Lista de acesso múltiplo
-  tags?: string[]; // Segmentação livre
   status?: 'Ativo' | 'Inativo' | 'Prospect';
+  // Campo legado para compatibilidade
+  farmName: string; 
 }
 
 export interface Pipeline extends BaseDocument {
@@ -77,6 +97,9 @@ export interface DealProduct {
 export interface Deal extends BaseDocument {
   title: string;
   clientId: string;
+  farmId?: string;
+  contactIds?: string[];
+  contactNames?: string[];
   clientName: string; 
   farmName: string;   
   pipelineId: string;
@@ -89,6 +112,7 @@ export interface Deal extends BaseDocument {
   creatorName: string;
   products: DealProduct[];
   lastStageChangeDate: string;
+  description?: string;
   // Novos campos Pipedrive
   label?: string;
   probability?: number;
@@ -115,6 +139,19 @@ export interface Attachment {
   size?: number;
 }
 
+export interface WhatsAppMessage extends BaseDocument {
+  phone: string;
+  receiverPhone?: string; // The phone number of the account that received the message
+  text: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'document';
+  status: 'pending' | 'processed' | 'ignored';
+  receivedAt: string;
+  senderName?: string;
+  linkedClientId?: string;
+  linkedActivityId?: string;
+}
+
 export interface Activity extends BaseDocument {
   dealId?: string; // Opcional, pode ser atividade solta no cliente
   clientId: string;
@@ -130,6 +167,9 @@ export interface Activity extends BaseDocument {
 
 export interface Visit extends BaseDocument {
   clientId: string;
+  farmId?: string;
+  contactId?: string;
+  contactName?: string;
   dealId?: string; // Vinculo com oportunidade específica
   technicianId: string;
   technicianName: string;

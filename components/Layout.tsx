@@ -94,6 +94,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
     { id: 'production_funnel', label: t('nav.production'), icon: BarChart3, requiresAdmin: false },
     { id: 'sales', label: t('nav.sales'), icon: Trello, requiresAdmin: false },
     { id: 'clients', label: t('nav.clients'), icon: Users, requiresAdmin: false },
+    { id: 'whatsapp_inbox', label: 'WhatsApp', icon: MessageSquare, requiresAdmin: false },
     { id: 'map', label: t('nav.map'), icon: MapIcon, requiresAdmin: false },
     // Agora visível para todos (hidden removido)
     { id: 'price_table', label: t('nav.prices'), icon: FileSpreadsheet, requiresAdmin: false },
@@ -394,6 +395,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
                       <div><h4 className="font-black text-slate-900 text-sm">WhatsApp</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Diagnóstico</p></div>
                    </button>
                  )}
+
+                 {/* WHATSAPP INBOX - Mobile */}
+                 <button onClick={() => handleMobileMenuNavigation('whatsapp_inbox')} className="md:hidden p-6 bg-[#009b58]/10 border border-[#009b58]/20 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
+                    <div className="h-14 w-14 bg-[#009b58]/20 text-[#009b58] rounded-2xl flex items-center justify-center shadow-sm border border-[#009b58]/30"><MessageSquare size={28} /></div>
+                    <div><h4 className="font-black text-slate-900 text-sm">WhatsApp</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Mensagens</p></div>
+                 </button>
 
 
               </div>
