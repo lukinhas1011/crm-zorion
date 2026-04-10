@@ -2,16 +2,19 @@ import dotenv from 'dotenv';
 dotenv.config({ override: true }); // Force override
 
 import express from 'express';
+import axios from 'axios';
 import cors from 'cors';
 import bodyParser from 'body-parser';
 import { createServer as createViteServer } from 'vite';
-import { processWhatsAppMessage } from './services/whatsappService';
-import { db, auth } from './services/firebase';
+import { processWhatsAppMessage } from './services/whatsappService.ts';
+import { db, auth } from './services/firebase.ts';
 import { collection, getDocs, query, orderBy, limit, where, doc, updateDoc } from 'firebase/firestore';
 import { signInAnonymously } from 'firebase/auth';
 
 console.log("--- SERVER START ENV DEBUG ---");
 console.log("GEMINI_API_KEY exists:", !!process.env.GEMINI_API_KEY);
+console.log("TWILIO_ACCOUNT_SID exists:", !!process.env.TWILIO_ACCOUNT_SID);
+console.log("TWILIO_AUTH_TOKEN exists:", !!process.env.TWILIO_AUTH_TOKEN);
 if (process.env.GEMINI_API_KEY) {
     console.log("GEMINI_API_KEY length:", process.env.GEMINI_API_KEY.length);
     console.log("GEMINI_API_KEY first 4 chars:", process.env.GEMINI_API_KEY.substring(0, 4));
@@ -54,9 +57,23 @@ async function startServer() {
   // 2. Webhook POST (Twilio/Z-API) - Com e sem barra no final
   app.post(['/api/whatsapp/webhook', '/api/whatsapp/webhook/'], async (req, res) => {
     console.log('[Webhook] POST request received');
+    console.log('[Webhook] Body:', JSON.stringify(req.body));
     try {
-      res.status(200).send('OK'); // Resposta rápida
-      processWhatsAppMessage(req.body).catch(err => console.error('[Async Error]', err));
+      const result = await processWhatsAppMessage(req.body);
+      
+      if (result && result.noAccess) {
+        console.log('[Webhook] Access denied for user');
+        res.set('Content-Type', 'text/xml');
+        return res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response><Message>Você não tem acesso a esta função. Por favor, entre em contato com o administrador.</Message></Response>');
+      }
+
+      if (result && result.replyText) {
+        console.log('[Webhook] Sending reply:', result.replyText);
+        res.set('Content-Type', 'text/xml');
+        return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?><Response><Message>${result.replyText}</Message></Response>`);
+      }
+      
+      res.status(200).send('OK');
     } catch (error) {
       console.error('[Webhook Error]', error);
       if (!res.headersSent) res.status(500).send('Error');
@@ -76,7 +93,65 @@ async function startServer() {
     }
   });
 
-  // 4. Health Check
+  // 4. Proxy de Mídia (Para quando o re-upload falha ou para mídias externas com Auth)
+  app.get('/api/whatsapp/proxy-media', async (req, res) => {
+    const mediaUrl = req.query.url as string;
+    if (!mediaUrl) return res.status(400).send('URL missing');
+
+    console.log(`[Proxy Media] Request for: ${mediaUrl}`);
+    try {
+        const accountSid = process.env.TWILIO_ACCOUNT_SID;
+        const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+        const axiosConfig: any = {
+            responseType: 'stream',
+            timeout: 30000, // Aumentado para 30s
+            httpsAgent: new (await import('https')).Agent({ rejectUnauthorized: false }),
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'image/*,video/*,audio/*,application/*'
+            }
+        };
+
+        // Se for Twilio, adiciona autenticação
+        if (mediaUrl.includes('twilio.com')) {
+            if (accountSid && authToken) {
+                console.log('[Proxy Media] Using Twilio Auth');
+                axiosConfig.auth = {
+                    username: accountSid,
+                    password: authToken
+                };
+            } else {
+                console.warn('[Proxy Media] Twilio URL detected but credentials missing');
+            }
+        }
+
+        const response = await axios.get(mediaUrl, axiosConfig);
+        
+        // Repassa o content-type original
+        const contentType = response.headers['content-type'] || 'image/jpeg';
+        res.setHeader('Content-Type', contentType);
+        
+        // Cache por 24 horas (mídias de whatsapp raramente mudam)
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+
+        console.log(`[Proxy Media] Success: ${mediaUrl} (${contentType})`);
+        response.data.pipe(res);
+    } catch (error: any) {
+        console.error(`[Proxy Media Error] ${mediaUrl}:`, error.message);
+        
+        // Se for erro de 404 ou 401, talvez a URL expirou ou as credenciais estão erradas
+        if (error.response) {
+            console.error(`[Proxy Media Error] Status: ${error.response.status}`);
+            return res.status(error.response.status).send(`Error fetching media: ${error.message}`);
+        }
+
+        // Fallback: Redireciona para a URL original (pode falhar no browser por CORS, mas é a última tentativa)
+        res.redirect(mediaUrl);
+    }
+  });
+
+  // 5. Health Check
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok' });
   });

@@ -27,7 +27,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(stage.name);
 
-  const totalValue = deals.reduce((sum, d) => sum + d.value, 0);
+  const totalValue = (deals || []).reduce((sum, d) => sum + d.value, 0);
   const colorClass = COLORS[index % COLORS.length];
 
   const handleSaveName = () => {
@@ -85,7 +85,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
           )}
         </div>
         <div className="text-[10px] text-slate-400 font-black uppercase tracking-tighter">
-          R$ {totalValue.toLocaleString('pt-BR')} • {deals.length} {deals.length === 1 ? 'NEGÓCIO' : 'NEGÓCIOS'}
+          R$ {totalValue.toLocaleString('pt-BR')} • {(deals || []).length} {(deals || []).length === 1 ? 'NEGÓCIO' : 'NEGÓCIOS'}
         </div>
         <div className={`h-1.5 w-full absolute top-0 left-0 ${colorClass}`} />
       </div>
@@ -116,13 +116,13 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
               </span>
             )}
          </div>
-         <span className="text-[9px] font-bold text-slate-400">{deals.length}</span>
+         <span className="text-[9px] font-bold text-slate-400">{(deals || []).length}</span>
       </div>
 
       {/* Área de Cards */}
       <div className="flex-1 overflow-y-auto p-2 md:p-4 space-y-2 md:space-y-4 custom-scrollbar pb-32 md:pb-32">
-        {deals.length > 0 ? (
-          deals.map(deal => (
+        {(deals || []).length > 0 ? (
+          (deals || []).map(deal => (
             <DealCard 
               key={deal.id} 
               deal={deal} 
@@ -137,7 +137,7 @@ export const KanbanColumn: React.FC<KanbanColumnProps> = ({
             />
           ))
         ) : (
-          <div className="h-60 md:h-40 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center text-slate-300 opacity-60 md:opacity-40 group hover:opacity-100 hover:border-zorion-500/30 transition-all bg-slate-50/50 md:bg-transparent mx-2 md:mx-0">
+          <div className="h-60 md:h-40 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-300 opacity-60 md:opacity-40 group hover:opacity-100 hover:border-zorion-500/30 transition-all bg-slate-50/50 md:bg-transparent mx-2 md:mx-0">
             <LayoutGrid size={32} className="mb-3 text-slate-300" />
             <span className="text-[10px] font-black uppercase tracking-widest text-center px-4 leading-tight">Nenhuma oportunidade nesta etapa</span>
           </div>

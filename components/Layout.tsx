@@ -54,10 +54,13 @@ interface LayoutProps {
   currencyMode?: 'BRL' | 'USD';
   onToggleCurrency?: () => void;
   t?: Translator;
-  showPriceTable?: boolean; // Mantido para compatibilidade, mas não usado para ocultar
+  showPriceTable?: boolean;
+  allUsers?: User[];
+  globalTechnicianFilter?: string;
+  setGlobalTechnicianFilter?: (id: string) => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user, onLogout, currencyMode, onToggleCurrency, t = (k) => k, showPriceTable = true }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user, onLogout, currencyMode, onToggleCurrency, t = (k) => k, showPriceTable = true, allUsers = [], globalTechnicianFilter = '', setGlobalTechnicianFilter }) => {
   const [isAppsModalOpen, setIsAppsModalOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
@@ -71,11 +74,20 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
   const feedbackFileInputRef = useRef<HTMLInputElement>(null);
 
   // Admin Geral do Sistema
-  const isAdmin = user && ((user.email || '').toLowerCase() === 'l.rigolin@zorionan.com' || user.role === 'Admin');
+  const isAdmin = user && (
+    (user.email || '').toLowerCase() === 'l.rigolim@zorionan.com' || 
+    (user.email || '').toLowerCase() === 'l.rigolim@zorion.com' ||
+    (user.email || '').toLowerCase() === 'lrosadamaia64@gmail.com' || 
+    user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83' ||
+    (user.role || '').toLowerCase() === 'admin'
+  );
   
-  // Permissão específica para visualizar Feedback (l.rigolin e lucas.maia)
+  // Permissão específica para visualizar Feedback (l.rigolim e lucas.maia)
   const canManageFeedback = user && (
-    (user.email || '').toLowerCase() === 'l.rigolin@zorionan.com' || 
+    (user.email || '').toLowerCase() === 'l.rigolim@zorionan.com' || 
+    (user.email || '').toLowerCase() === 'l.rigolim@zorion.com' || 
+    (user.email || '').toLowerCase() === 'lrosadamaia64@gmail.com' || 
+    user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83' ||
     (user.email || '').toLowerCase().includes('lucas.maia')
   );
 
@@ -85,7 +97,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
     { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard },
     { id: 'production_funnel', label: t('nav.production'), icon: BarChart3 },
     { id: 'new_visit', label: t('nav.new_visit'), icon: Plus, isAction: true },
-    { id: 'clients', label: t('nav.clients'), icon: Users },
+    { id: 'map', label: t('nav.map'), icon: MapIcon },
     { id: 'apps_menu', label: 'Menu', icon: Menu, isApps: true },
   ];
 
@@ -101,7 +113,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
     { id: 'apps_menu', label: t('nav.apps'), icon: Grid, isApps: true, requiresAdmin: false },
   ];
 
-  const desktopNavItems = desktopNavItemsRaw.filter(item => (!item.requiresAdmin || isAdmin));
+  const desktopNavItems = desktopNavItemsRaw.filter(item => 
+    (!item.requiresAdmin || isAdmin) && 
+    (!item.requiresEmail || (Array.isArray(item.requiresEmail) ? item.requiresEmail.includes(user?.email) : user?.email === item.requiresEmail))
+  );
 
   const handleNavigation = (id: string, isApps?: boolean) => {
     if (isApps) {
@@ -234,7 +249,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row font-sans">
-      <aside className="hidden md:flex flex-col w-72 bg-slate-950 text-slate-100 h-screen sticky top-0 border-r border-zorion-900/20 z-20">
+      <aside className="hidden md:flex flex-col w-72 bg-slate-950 text-slate-100 h-screen sticky top-0 border-r border-zorion-900/20 z-20 overflow-y-auto">
         <button onClick={() => onNavigate('dashboard')} className="h-40 w-full border-b border-white/5 bg-gradient-to-b from-zorion-950 to-slate-950 flex items-center justify-center p-6 group focus:outline-none transition-all hover:bg-slate-900/50 relative overflow-hidden">
            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 bg-zorion-500/20 rounded-full blur-3xl opacity-40 group-hover:opacity-80 transition-opacity duration-700"></div>
            <img src="logo.png" alt="Zorion" className="w-full max-w-[200px] max-h-[100px] object-contain relative z-10 drop-shadow-2xl group-hover:scale-105 transition-transform duration-500 brightness-0 invert opacity-90" />
@@ -247,7 +262,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
         </div>
 
         <nav className="flex-1 px-4 pb-4 space-y-2 overflow-y-auto custom-scrollbar">
-          {desktopNavItems.map((item) => (
+          {(desktopNavItems || []).map((item) => (
             <button key={item.id} onClick={() => handleNavigation(item.id, item.isApps)} className={`w-full flex items-center justify-between px-5 py-3.5 rounded-xl transition-all duration-300 group ${activePage === item.id ? 'bg-zorion-900/20 text-zorion-300 border border-zorion-900/30' : 'text-slate-500 hover:bg-white/5 hover:text-white'}`}>
               <div className="flex items-center gap-4">
                 <item.icon className={`h-5 w-5 ${activePage === item.id ? 'text-zorion-400' : 'text-slate-600 group-hover:text-zorion-400'}`} />
@@ -334,7 +349,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
       {!hideMobileNav && (
         <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-[92%] max-w-md z-50">
            <div className="bg-[#0f172a] rounded-[2rem] shadow-2xl p-2 flex justify-between items-center relative border border-slate-800">
-              {mobileNavItems.map((item) => {
+              {(mobileNavItems || []).map((item) => {
                  const isActive = activePage === item.id || (item.isApps && isAppsModalOpen);
                  const Icon = item.icon;
                  if (item.isAction) {
@@ -377,27 +392,24 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
                  </button>
 
                  {/* LINK EXTERNO: ESTOQUE (Visível Desktop e Mobile) */}
-                 <a href="https://controle-de-estoque-zorion.web.app/" target="_blank" rel="noopener noreferrer" className="p-6 bg-blue-50 border border-blue-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
-                    <div className="h-14 w-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shadow-sm border border-blue-200"><Package size={28} /></div>
-                    <div><h4 className="font-black text-slate-900 text-sm">Estoque</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Logística</p></div>
-                 </a>
-
-                 {/* LINK EXTERNO: DR. ZETA (Visível Desktop e Mobile) */}
-                 <a href="https://doctor-zeta.web.app/" target="_blank" rel="noopener noreferrer" className="p-6 bg-purple-50 border border-purple-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
-                    <div className="h-14 w-14 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center shadow-sm border border-purple-200"><Dna size={28} /></div>
-                    <div><h4 className="font-black text-slate-900 text-sm">Dr. Zeta</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Veterinária</p></div>
-                 </a>
-
-                 {/* DIAGNÓSTICO WHATSAPP (Visível Apenas para lucas.maia) */}
-                 {(user.email || '').toLowerCase().includes('lucas.maia') && (
-                   <button onClick={() => handleMobileMenuNavigation('integration_test')} className="p-6 bg-green-50 border border-green-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
-                      <div className="h-14 w-14 bg-green-100 text-green-600 rounded-2xl flex items-center justify-center shadow-sm border border-green-200"><MessageSquare size={28} /></div>
-                      <div><h4 className="font-black text-slate-900 text-sm">WhatsApp</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Diagnóstico</p></div>
-                   </button>
+                 {(user?.email === 'lucas.maia@zorion.com' || user?.email === 'lrosadamaia64@gmail.com' || user?.email === 'l.rigolim@zorionan.com' || user?.email === 'l.rigolim@zorion.com' || user?.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83') && (
+                   <a href="https://controle-de-estoque-zorion.web.app/" target="_blank" rel="noopener noreferrer" className="p-6 bg-blue-50 border border-blue-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
+                      <div className="h-14 w-14 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shadow-sm border border-blue-200"><Package size={28} /></div>
+                      <div><h4 className="font-black text-slate-900 text-sm">Estoque</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Logística</p></div>
+                   </a>
                  )}
 
-                 {/* WHATSAPP INBOX - Mobile */}
-                 <button onClick={() => handleMobileMenuNavigation('whatsapp_inbox')} className="md:hidden p-6 bg-[#009b58]/10 border border-[#009b58]/20 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
+                 {/* LINK EXTERNO: DR. ZETA (Visível Desktop e Mobile) */}
+                 {(user?.email === 'lucas.maia@zorion.com' || user?.email === 'lrosadamaia64@gmail.com' || user?.email === 'l.rigolim@zorionan.com' || user?.email === 'l.rigolim@zorion.com' || user?.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83') && (
+                   <a href="https://doctor-zeta.web.app/" target="_blank" rel="noopener noreferrer" className="p-6 bg-purple-50 border border-purple-100 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
+                      <div className="h-14 w-14 bg-purple-100 text-purple-600 rounded-2xl flex items-center justify-center shadow-sm border border-purple-200"><Dna size={28} /></div>
+                      <div><h4 className="font-black text-slate-900 text-sm">Dr. Zeta</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Veterinária</p></div>
+                   </a>
+                 )}
+
+
+                 {/* WHATSAPP INBOX */}
+                 <button onClick={() => handleMobileMenuNavigation('whatsapp_inbox')} className="p-6 bg-[#009b58]/10 border border-[#009b58]/20 rounded-[2.5rem] flex flex-col items-center text-center gap-3 active:scale-95 transition-all">
                     <div className="h-14 w-14 bg-[#009b58]/20 text-[#009b58] rounded-2xl flex items-center justify-center shadow-sm border border-[#009b58]/30"><MessageSquare size={28} /></div>
                     <div><h4 className="font-black text-slate-900 text-sm">WhatsApp</h4><p className="text-[10px] font-bold text-slate-400 uppercase">Mensagens</p></div>
                  </button>
@@ -499,7 +511,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activePage, onNavigate, user,
                                 ))}
                             </div>
                         )}
-                        <button onClick={() => feedbackFileInputRef.current?.click()} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:border-zorion-500 hover:text-zorion-600 transition-colors bg-slate-50/50">
+      
+                              <button onClick={() => feedbackFileInputRef.current?.click()} className="w-full py-4 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:border-zorion-500 hover:text-zorion-600 transition-colors bg-slate-50/50">
                             <Camera size={24} className="mb-1" />
                             <span className="text-[10px] font-black uppercase tracking-widest">Adicionar Print</span>
                         </button>

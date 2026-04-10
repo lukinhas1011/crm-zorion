@@ -27,7 +27,7 @@ interface NewVisitProps {
   onAddDeal?: (deal: Deal) => void;
 }
 
-const NewVisit: React.FC<NewVisitProps> = ({ clients, catalog, onAddVisit, onAddCatalogItem, onComplete, user, deals, onAddActivity, onAddDeal, onAddClient, onUpdateClient }) => {
+const NewVisit: React.FC<NewVisitProps> = ({ clients = [], catalog = [], onAddVisit, onAddCatalogItem, onComplete, user, deals = [], onAddActivity, onAddDeal, onAddClient, onUpdateClient }) => {
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
   const [selectedFarmId, setSelectedFarmId] = useState<string>('');

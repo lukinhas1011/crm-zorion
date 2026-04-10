@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { HashRouter as Router } from 'react-router-dom';
 import { collection, onSnapshot, query, orderBy, setDoc, doc, updateDoc, getDoc, writeBatch, deleteDoc, where, getDocs } from 'firebase/firestore';
 import { signOut, onAuthStateChanged } from 'firebase/auth';
@@ -15,7 +15,6 @@ import NewVisit from './pages/NewVisit';
 import Visits from './pages/Visits';
 import SalesFunnel from './pages/SalesFunnel';
 import ProductionFunnel from './pages/ProductionFunnel';
-import Nutrition from './pages/Nutrition';
 import PriceTablePage from './pages/PriceTablePage';
 import FeedbackList from './pages/FeedbackList';
 import Profile from './pages/Profile';
@@ -106,6 +105,9 @@ const AppContent: React.FC = () => {
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
   
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [globalTechnicianFilter, setGlobalTechnicianFilter] = useState('');
+  
   // Controle de Permissão da Tabela de Preços - AGORA SEMPRE TRUE (Visível para todos)
   const [canViewPriceTable] = useState(true);
 
@@ -120,9 +122,20 @@ const AppContent: React.FC = () => {
   const [pageContext, setPageContext] = useState<any>(null);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
-  const isAdmin = user && ((user.email || '').toLowerCase() === 'l.rigolin@zorionan.com' || user.role === 'Admin');
+  const isAdmin = user && (
+    (user.email || '').trim().toLowerCase() === 'l.rigolim@zorionan.com' || 
+    (user.email || '').trim().toLowerCase() === 'l.rigolim@zorion.com' ||
+    (user.email || '').trim().toLowerCase() === 'lrosadamaia64@gmail.com' || 
+    user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83' ||
+    (user.role || '').toLowerCase() === 'admin'
+  );
   // Verificação robusta de Master: Email ou ID específico
-  const isMaster = user && ((user.email || '').trim().toLowerCase() === 'l.rigolin@zorionan.com' || user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83');
+  const isMaster = user && (
+    (user.email || '').trim().toLowerCase() === 'l.rigolim@zorionan.com' || 
+    (user.email || '').trim().toLowerCase() === 'l.rigolim@zorion.com' ||
+    (user.email || '').trim().toLowerCase() === 'lrosadamaia64@gmail.com' || 
+    user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83'
+  );
 
   // Função de Tradução
   const t: Translator = (key) => {
@@ -212,30 +225,32 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (!user) return;
 
-    const unsubClients = onSnapshot(query(collection(db, COLLECTIONS.CLIENTS), orderBy('updatedAt', 'desc')), 
+    let unsubUsers = () => {};
+    if (isAdmin || isMaster) {
+      unsubUsers = onSnapshot(collection(db, COLLECTIONS.USERS), (snap) => {
+        const usersList = snap.docs.map(d => ({ id: d.id, ...d.data() } as User));
+        usersList.sort((a, b) => {
+            const nameA = (a.name || a.email || '').toLowerCase();
+            const nameB = (b.name || b.email || '').toLowerCase();
+            return nameA.localeCompare(nameB);
+        });
+        setAllUsers(usersList);
+      });
+    }
+
+    const unsubClients = onSnapshot(collection(db, COLLECTIONS.CLIENTS), 
       (snap) => {
         const allClients = snap.docs.map(d => ({ ...d.data(), id: d.id } as Client));
-        if (isAdmin) {
-          setClients(allClients);
-        } else {
-          // Filtra clientes atribuídos ao usuário logado (suporte a legado e múltipla atribuição)
-          setClients(allClients.filter(c => {
-             const isLegacyOwner = c.assignedTechnicianId === user.id;
-             const isMultiOwner = c.assignedTechnicianIds?.includes(user.id);
-             return isLegacyOwner || isMultiOwner;
-          }));
-        }
+        // Ordenação em memória para garantir que todos os documentos apareçam (mesmo sem updatedAt)
+        allClients.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+        setClients(allClients);
       });
 
-    const unsubVisits = onSnapshot(query(collection(db, COLLECTIONS.VISITS), orderBy('date', 'desc')), 
+    const unsubVisits = onSnapshot(collection(db, COLLECTIONS.VISITS), 
       (snap) => {
         const allVisits = snap.docs.map(d => ({ ...d.data(), id: d.id } as Visit));
-        if (isAdmin) {
-          setVisits(allVisits);
-        } else {
-          // Permite ver visitas onde o usuário é o técnico OU onde o cliente faz parte da lista de clientes do usuário
-          setVisits(allVisits.filter(v => v.technicianId === user.id || (clients.some(c => c.id === v.clientId))));
-        }
+        allVisits.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        setVisits(allVisits);
       });
 
     const unsubCatalog = onSnapshot(query(collection(db, COLLECTIONS.CATALOG), orderBy('name', 'asc')), 
@@ -276,34 +291,22 @@ const AppContent: React.FC = () => {
       }
     });
 
-    const unsubDeals = onSnapshot(query(collection(db, COLLECTIONS.DEALS), orderBy('updatedAt', 'desc')), 
+    const unsubDeals = onSnapshot(collection(db, COLLECTIONS.DEALS), 
       (snap) => {
         const allDeals = snap.docs.map(d => ({ ...d.data(), id: d.id } as Deal));
-        if (isAdmin) {
-          setDeals(allDeals);
-        } else {
-          // CORREÇÃO: Permite ver deals criados pelo usuário OU deals pertencentes aos clientes do usuário (mesmo que criados por admin)
-          setDeals(allDeals.filter(d => {
-             const isCreator = d.creatorId === user.id;
-             const isClientOwner = clients.some(c => c.id === d.clientId);
-             return isCreator || isClientOwner;
-          }));
-        }
+        allDeals.sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+        setDeals(allDeals);
       });
 
-    const unsubActivities = onSnapshot(query(collection(db, COLLECTIONS.ACTIVITIES), orderBy('dueDate', 'asc')), 
+    const unsubActivities = onSnapshot(collection(db, COLLECTIONS.ACTIVITIES), 
       (snap) => {
         const allActivities = snap.docs.map(d => ({ ...d.data(), id: d.id } as Activity));
-        if (isAdmin) {
-          setActivities(allActivities);
-        } else {
-          // CORREÇÃO: Permite ver atividades do usuário OU atividades nos clientes do usuário (mesmo que feitas por admin)
-          setActivities(allActivities.filter(a => a.technicianId === user.id || clients.some(c => c.id === a.clientId)));
-        }
+        allActivities.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+        setActivities(allActivities);
       });
 
     return () => {
-      unsubClients(); unsubVisits(); unsubCatalog(); unsubPipelines(); 
+      unsubUsers(); unsubClients(); unsubVisits(); unsubCatalog(); unsubPipelines(); 
       unsubStages(); unsubDeals(); unsubActivities();
     };
   }, [user, isAdmin, isMaster]); // REMOVIDO clients.length para evitar loop de reconexão
@@ -383,6 +386,57 @@ const AppContent: React.FC = () => {
     setPageContext(extra || null);
   };
 
+  const myClients = useMemo(() => {
+    if (!user) return [];
+    if (isAdmin || isMaster) return clients;
+    return clients.filter(c => {
+      const isLegacyOwner = c.assignedTechnicianId === user.id;
+      const isMultiOwner = c.assignedTechnicianIds?.includes(user.id);
+      return isLegacyOwner || isMultiOwner;
+    });
+  }, [clients, user, isAdmin, isMaster]);
+
+  const filteredClients = useMemo(() => {
+    if (!globalTechnicianFilter) return myClients;
+    return myClients.filter(c => c.assignedTechnicianId === globalTechnicianFilter || c.assignedTechnicianIds?.includes(globalTechnicianFilter));
+  }, [myClients, globalTechnicianFilter]);
+
+  const myVisits = useMemo(() => {
+    if (!user) return [];
+    if (isAdmin || isMaster) return visits;
+    return visits.filter(v => v.technicianId === user.id || myClients.some(c => c.id === v.clientId));
+  }, [visits, myClients, user, isAdmin, isMaster]);
+
+  const filteredVisits = useMemo(() => {
+    if (!globalTechnicianFilter) return myVisits;
+    const allowedClientIds = new Set(filteredClients.map(c => c.id));
+    return myVisits.filter(v => allowedClientIds.has(v.clientId));
+  }, [myVisits, filteredClients, globalTechnicianFilter]);
+
+  const myDeals = useMemo(() => {
+    if (!user) return [];
+    if (isAdmin || isMaster) return deals;
+    return deals.filter(d => d.creatorId === user.id || myClients.some(c => c.id === d.clientId));
+  }, [deals, myClients, user, isAdmin, isMaster]);
+
+  const filteredDeals = useMemo(() => {
+    if (!globalTechnicianFilter) return myDeals;
+    const allowedClientIds = new Set(filteredClients.map(c => c.id));
+    return myDeals.filter(d => allowedClientIds.has(d.clientId));
+  }, [myDeals, filteredClients, globalTechnicianFilter]);
+
+  const myActivities = useMemo(() => {
+    if (!user) return [];
+    if (isAdmin || isMaster) return activities;
+    return activities.filter(a => a.technicianId === user.id || myClients.some(c => c.id === a.clientId));
+  }, [activities, myClients, user, isAdmin, isMaster]);
+
+  const filteredActivities = useMemo(() => {
+    if (!globalTechnicianFilter) return myActivities;
+    const allowedClientIds = new Set(filteredClients.map(c => c.id));
+    return myActivities.filter(a => allowedClientIds.has(a.clientId));
+  }, [myActivities, filteredClients, globalTechnicianFilter]);
+
   if (isAuthenticating) {
     return (
       <div className="min-h-screen bg-zorion-950 flex flex-col items-center justify-center p-8">
@@ -404,21 +458,21 @@ const AppContent: React.FC = () => {
 
   const renderPage = () => {
     switch (activePage) {
-      case 'dashboard': return <Dashboard clients={clients} visits={visits} user={user} onNavigate={handleNavigate} onSelectClient={handleSelectClient} deals={deals} activities={activities} {...commonProps} />;
-      case 'sales': return <SalesFunnel deals={deals} stages={stages} pipelines={pipelines} activities={activities} clients={clients} catalog={catalog} user={user} onAddDeal={handleAddDeal} onUpdateDeal={handleUpdateDeal} onDeleteDeal={handleDeleteDeal} onAddVisit={handleAddVisit} onSelectClient={handleSelectClient} pendingDealId={pageContext?.dealId} createForClientId={pageContext?.createFor} initialNotes={pageContext?.initialNotes} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onDeleteActivity={handleDeleteActivity} onAddCatalogItem={handleAddCatalogItem} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onUpdateStage={handleUpdateStage} {...commonProps} />;
-      case 'production_funnel': return <ProductionFunnel deals={deals} activities={activities} clients={clients} visits={visits} catalog={catalog} user={user} onAddDeal={handleAddDeal} onUpdateDeal={handleUpdateDeal} onDeleteDeal={handleDeleteDeal} onSelectClient={handleSelectClient} onAddVisit={handleAddVisit} onUpdateClient={handleUpdateClient} onAddCatalogItem={handleAddCatalogItem} pendingDealId={pageContext?.dealId} createForClientId={pageContext?.createFor} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onDeleteActivity={handleDeleteActivity} {...commonProps} />;
-      case 'map': return <MapPage clients={clients} visits={visits} onSelectClient={handleSelectClient} user={user} />;
-      case 'clients': return <Clients clients={clients} visits={visits} deals={deals} activities={activities} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onSelectClient={handleSelectClient} onNavigate={handleNavigate} user={user} pageContext={pageContext} />;
-      case 'new_visit': return <NewVisit clients={clients} catalog={catalog} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onAddVisit={handleAddVisit} onAddCatalogItem={handleAddCatalogItem} onComplete={() => setActivePage('dashboard')} user={user} deals={deals} onAddActivity={handleAddActivity} onAddDeal={handleAddDeal} />;
+      case 'dashboard': return <Dashboard clients={filteredClients} visits={filteredVisits} user={user} onNavigate={handleNavigate} onSelectClient={handleSelectClient} deals={filteredDeals} activities={filteredActivities} {...commonProps} />;
+      case 'sales': return <SalesFunnel deals={filteredDeals} stages={stages} pipelines={pipelines} activities={filteredActivities} clients={filteredClients} catalog={catalog} user={user} onAddDeal={handleAddDeal} onUpdateDeal={handleUpdateDeal} onDeleteDeal={handleDeleteDeal} onAddVisit={handleAddVisit} onSelectClient={handleSelectClient} pendingDealId={pageContext?.dealId} createForClientId={pageContext?.createFor} initialMessageData={pageContext?.initialMessageData} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onDeleteActivity={handleDeleteActivity} onAddCatalogItem={handleAddCatalogItem} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onUpdateStage={handleUpdateStage} allUsers={allUsers} globalTechnicianFilter={globalTechnicianFilter} setGlobalTechnicianFilter={setGlobalTechnicianFilter} {...commonProps} />;
+      case 'production_funnel': return <ProductionFunnel deals={filteredDeals} activities={filteredActivities} clients={filteredClients} visits={filteredVisits} catalog={catalog} user={user} onAddDeal={handleAddDeal} onUpdateDeal={handleUpdateDeal} onDeleteDeal={handleDeleteDeal} onSelectClient={handleSelectClient} onAddVisit={handleAddVisit} onUpdateClient={handleUpdateClient} onAddCatalogItem={handleAddCatalogItem} pendingDealId={pageContext?.dealId} createForClientId={pageContext?.createFor} initialMessageData={pageContext?.initialMessageData} onAddActivity={handleAddActivity} onUpdateActivity={handleUpdateActivity} onDeleteActivity={handleDeleteActivity} allUsers={allUsers} globalTechnicianFilter={globalTechnicianFilter} setGlobalTechnicianFilter={setGlobalTechnicianFilter} {...commonProps} />;
+      case 'map': return <MapPage clients={filteredClients} visits={filteredVisits} onSelectClient={handleSelectClient} user={user} />;
+      case 'clients': return <Clients clients={filteredClients} visits={filteredVisits} deals={filteredDeals} activities={filteredActivities} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onSelectClient={handleSelectClient} onNavigate={handleNavigate} user={user} pageContext={pageContext} allUsers={allUsers} />;
+      case 'new_visit': return <NewVisit clients={filteredClients} catalog={catalog} onAddClient={handleAddClient} onUpdateClient={handleUpdateClient} onAddVisit={handleAddVisit} onAddCatalogItem={handleAddCatalogItem} onComplete={() => setActivePage('dashboard')} user={user} deals={filteredDeals} onAddActivity={handleAddActivity} onAddDeal={handleAddDeal} />;
       case 'price_table': return <PriceTablePage user={user} />;
       case 'client_details':
         const targetClientId = pageContext?.clientId || selectedClientId;
-        const client = clients.find(c => c.id === targetClientId);
+        const client = filteredClients.find(c => c.id === targetClientId);
         if (!client) return null;
         return <ClientDetails 
           client={client} 
-          visits={visits.filter(v => v.clientId === targetClientId)} 
-          deals={deals} 
+          visits={filteredVisits.filter(v => v.clientId === targetClientId)} 
+          deals={filteredDeals} 
           stages={stages}
           pipelines={pipelines}
           catalog={catalog} 
@@ -429,23 +483,22 @@ const AppContent: React.FC = () => {
           onUpdateClient={handleUpdateClient} 
           onAddCatalogItem={handleAddCatalogItem}
           onNavigate={handleNavigate} 
-          activities={activities.filter(a => a.clientId === targetClientId)}
+          activities={filteredActivities.filter(a => a.clientId === targetClientId)}
           onAddActivity={handleAddActivity}
           onUpdateActivity={handleUpdateActivity}
           initialTab={pageContext?.initialTab}
           {...commonProps}
         />;
-      case 'visits': return <Visits visits={visits} clients={clients} onSelectClient={handleSelectClient} onUpdateVisit={handleUpdateVisit} onDeleteVisit={handleDeleteVisit} />;
-      case 'whatsapp_inbox': return <WhatsAppInbox clients={clients} user={user} onNavigate={handleNavigate} />;
-      case 'nutrition': return <Nutrition />;
+      case 'visits': return <Visits visits={filteredVisits} clients={filteredClients} onSelectClient={handleSelectClient} onUpdateVisit={handleUpdateVisit} onDeleteVisit={handleDeleteVisit} />;
+      case 'whatsapp_inbox': return <WhatsAppInbox clients={filteredClients} user={user} onNavigate={handleNavigate} stages={stages} deals={filteredDeals} />;
       case 'feedback_list': return <FeedbackList />;
       case 'profile': return <Profile user={user} onUpdateUser={setUser} />;
       case 'integration_test': return <IntegrationTest />;
-      default: return <Dashboard clients={clients} visits={visits} user={user} onNavigate={handleNavigate} onSelectClient={handleSelectClient} deals={deals} activities={activities} {...commonProps} />;
+      default: return <Dashboard clients={filteredClients} visits={filteredVisits} user={user} onNavigate={handleNavigate} onSelectClient={handleSelectClient} deals={filteredDeals} activities={filteredActivities} {...commonProps} />;
     }
   };
 
-  return <Layout activePage={activePage} onNavigate={handleNavigate} user={user} onLogout={handleLogout} t={t} showPriceTable={canViewPriceTable} {...commonProps}>{renderPage()}</Layout>;
+  return <Layout activePage={activePage} onNavigate={handleNavigate} user={user} onLogout={handleLogout} t={t} showPriceTable={canViewPriceTable} allUsers={allUsers} globalTechnicianFilter={globalTechnicianFilter} setGlobalTechnicianFilter={setGlobalTechnicianFilter} {...commonProps}>{renderPage()}</Layout>;
 };
 
 const App: React.FC = () => <Router><AppContent /></Router>;

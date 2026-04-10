@@ -120,6 +120,7 @@ export interface Deal extends BaseDocument {
   originChannel?: string;
   originChannelId?: string;
   visibility: 'Owner' | 'Team' | 'Company';
+  attachments?: Attachment[];
   orgDetails?: {
     phone?: string;
     email?: string;
@@ -144,12 +145,14 @@ export interface WhatsAppMessage extends BaseDocument {
   receiverPhone?: string; // The phone number of the account that received the message
   text: string;
   mediaUrl?: string;
+  mediaUrls?: { url: string; type: string }[];
   mediaType?: 'image' | 'video' | 'audio' | 'document';
   status: 'pending' | 'processed' | 'ignored';
   receivedAt: string;
   senderName?: string;
   linkedClientId?: string;
   linkedActivityId?: string;
+  aiProcessedData?: any; // Dados processados pela IA para não gastar tokens novamente
 }
 
 export interface Activity extends BaseDocument {

@@ -25,10 +25,11 @@ interface ClientsProps {
   onNavigate: (page: string, extra?: any) => void;
   user: User;
   pageContext?: any;
+  allUsers?: User[];
 }
 
 const Clients: React.FC<ClientsProps> = ({ 
-  clients, visits, deals, activities, onAddClient, onUpdateClient, onSelectClient, onNavigate, user, pageContext 
+  clients = [], visits = [], deals = [], activities = [], onAddClient, onUpdateClient, onSelectClient, onNavigate, user, pageContext, allUsers = [] 
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -36,8 +37,6 @@ const Clients: React.FC<ClientsProps> = ({
   const [isSyncing, setIsSyncing] = useState(false);
   
   // Admin specific states
-  const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [selectedTechnicianFilter, setSelectedTechnicianFilter] = useState('');
   const [clientToTransfer, setClientToTransfer] = useState<Client | null>(null);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   
@@ -51,9 +50,16 @@ const Clients: React.FC<ClientsProps> = ({
   const [selectedGroupIndex, setSelectedGroupIndex] = useState<number>(0);
   const [selectedMasterId, setSelectedMasterId] = useState<string>('');
   const [isMerging, setIsMerging] = useState(false);
+  const [clientToSelectFarm, setClientToSelectFarm] = useState<Client | null>(null);
 
   // Verifica se é o Super Usuário ou Admin (Case insensitive para segurança)
-  const isAdmin = user && ((user.email || '').toLowerCase() === 'l.rigolin@zorionan.com' || user.role === 'Admin');
+  const isAdmin = user && (
+    (user.email || '').toLowerCase() === 'l.rigolim@zorionan.com' || 
+    (user.email || '').toLowerCase() === 'l.rigolim@zorion.com' || 
+    (user.email || '').toLowerCase() === 'lrosadamaia64@gmail.com' || 
+    user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83' ||
+    user.role === 'Admin'
+  );
 
   const defaultClientState: Client = {
     id: '',
@@ -74,33 +80,6 @@ const Clients: React.FC<ClientsProps> = ({
 
   const [clientForm, setClientForm] = useState<Client>(defaultClientState);
 
-  // Fetch Users for Admin (SOMENTE BANCO ATUAL)
-  useEffect(() => {
-    if (isAdmin) {
-        const fetchUsers = async () => {
-            try {
-                // Busca na coleção 'users' do banco de dados atual (db)
-                const usersCollection = collection(db, COLLECTIONS.USERS);
-                const snap = await getDocs(usersCollection);
-                
-                let usersList = snap.docs.map(d => ({ id: d.id, ...d.data() } as User));
-                
-                // Ordenação Alfabética
-                usersList.sort((a, b) => {
-                    const nameA = (a.name || a.email || '').toLowerCase();
-                    const nameB = (b.name || b.email || '').toLowerCase();
-                    return nameA.localeCompare(nameB);
-                });
-
-                setAllUsers(usersList);
-            } catch (error) {
-                console.error("Erro ao buscar usuários do sistema:", error);
-            }
-        };
-        fetchUsers();
-    }
-  }, [isAdmin]);
-
   useEffect(() => {
     if (pageContext?.newClientPhone || pageContext?.newClientName) {
       setClientForm({
@@ -117,6 +96,16 @@ const Clients: React.FC<ClientsProps> = ({
   const safeString = (val: any) => {
     if (val === null || val === undefined) return '';
     return String(val).trim();
+  };
+
+  const handleClientClick = (client: Client) => {
+    if (client.farms && client.farms.length > 1) {
+      setClientToSelectFarm(client);
+    } else if (client.farms && client.farms.length === 1) {
+      onNavigate('client_details', { clientId: client.id, farmId: client.farms[0].id, initialTab: 'deals' });
+    } else {
+      onNavigate('client_details', { clientId: client.id, initialTab: 'deals' });
+    }
   };
 
   // --- LÓGICA DE SINCRONIZAÇÃO APRIMORADA ---
@@ -170,7 +159,7 @@ const Clients: React.FC<ClientsProps> = ({
          
          if (!existingClient) {
             existingClient = localClients.find(c => 
-                (safeString(c.farmName).toLowerCase() === mappedFarmName.toLowerCase()) ||
+                (c.farms?.some(f => safeString(f.name).toLowerCase() === mappedFarmName.toLowerCase())) ||
                 (safeString(c.name).toLowerCase() === mappedName.toLowerCase())
             );
          }
@@ -410,47 +399,7 @@ const Clients: React.FC<ClientsProps> = ({
     setIsModalOpen(true);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!clientForm.name) {
-        alert("O nome do cliente/fábrica é obrigatório.");
-        return;
-    }
 
-    // Se não houver fazendas, cria uma padrão com os dados do topo (compatibilidade)
-    let finalFarms = clientForm.farms || [];
-    if (finalFarms.length === 0) {
-        finalFarms = [{
-            id: `farm_${Date.now()}`,
-            name: clientForm.farmName || 'Fazenda Principal',
-            location: clientForm.location,
-            herdSize: clientForm.herdSize,
-            treatedHerdSize: clientForm.treatedHerdSize,
-            lots: clientForm.lots || [],
-            contacts: [{
-                id: `cont_${Date.now()}`,
-                name: clientForm.name,
-                role: 'Proprietário'
-            }]
-        }];
-    }
-
-    const finalClientData = {
-        ...clientForm,
-        name: safeString(clientForm.name),
-        farmName: finalFarms[0]?.name || safeString(clientForm.farmName),
-        farms: finalFarms,
-        updatedAt: new Date().toISOString()
-    };
-
-    if (isEditing) {
-        onUpdateClient(finalClientData);
-    } else {
-        onAddClient(finalClientData);
-    }
-    
-    setIsModalOpen(false);
-  };
 
   const filteredClients = clients.filter(c => {
     const cName = safeString(c.name).toLowerCase();
@@ -460,13 +409,7 @@ const Clients: React.FC<ClientsProps> = ({
     const farmMatch = c.farms?.some(f => safeString(f.name).toLowerCase().includes(search));
     const contactMatch = c.farms?.some(f => f.contacts?.some(cont => safeString(cont.name).toLowerCase().includes(search)));
     
-    const matchesSearch = cName.includes(search) || farmMatch || contactMatch;
-    
-    const matchesTech = !selectedTechnicianFilter || 
-        c.assignedTechnicianId === selectedTechnicianFilter || 
-        (c.assignedTechnicianIds && c.assignedTechnicianIds.includes(selectedTechnicianFilter));
-
-    return matchesSearch && matchesTech;
+    return cName.includes(search) || farmMatch || contactMatch;
   });
 
   const getClientMetrics = (clientId: string) => {
@@ -495,21 +438,6 @@ const Clients: React.FC<ClientsProps> = ({
             <>
                 <div className="h-8 w-px bg-slate-200 mx-2"></div>
                 
-                {/* Admin Filter Dropdown */}
-                <div className="relative">
-                    <select 
-                        value={selectedTechnicianFilter} 
-                        onChange={e => setSelectedTechnicianFilter(e.target.value)} 
-                        className="pl-3 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 outline-none hover:bg-slate-100 transition-colors cursor-pointer appearance-none"
-                    >
-                        <option value="">Filtrar por Técnico (Todos)</option>
-                        {allUsers.map(u => (
-                            <option key={u.id} value={u.id}>{u.name || u.email || 'Usuário sem nome'}</option>
-                        ))}
-                    </select>
-                    <Filter className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={14} />
-                </div>
-
                 <button 
                 onClick={handleSyncEstoque}
                 disabled={isSyncing}
@@ -551,14 +479,13 @@ const Clients: React.FC<ClientsProps> = ({
             <tr className="border-b border-slate-200">
               <th className="px-4 py-3 w-10"></th>
               <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100">Tipo</th>
-              {/* ADMIN: Nome do Usuário que criou/pertence o cliente */}
-              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100">
-                  {isAdmin ? "Técnico(s) Responsável(is)" : "Unidade / Fazenda"}
-              </th>
-              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100">
-                  {isAdmin ? "Unidade / Responsável" : "Responsável"}
-              </th>
+              {isAdmin && (
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100">Técnico(s)</th>
+              )}
+              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100">Unidade / Fazenda</th>
+              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100">Responsável</th>
               <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100 text-center">Negócios</th>
+              <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest border-r border-slate-100 text-center">Capacidade</th>
               <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-center">Próxima Atividade</th>
               <th className="px-4 py-3 w-28 text-center">Ações</th>
             </tr>
@@ -569,7 +496,7 @@ const Clients: React.FC<ClientsProps> = ({
               const isSynced = (client as any).originSystem === 'estoque_zorion';
 
               return (
-                <tr key={client.id} onClick={() => onNavigate('client_details', { clientId: client.id, initialTab: 'deals' })} className="group hover:bg-blue-50/40 cursor-pointer transition-colors">
+                <tr key={client.id} onClick={() => handleClientClick(client)} className="group hover:bg-blue-50/40 cursor-pointer transition-colors">
                   <td className="px-4 py-3 text-center">
                     {client.type === 'Fábrica' ? <Factory size={16} className="text-blue-600" /> : <Beef size={16} className="text-emerald-600" />}
                   </td>
@@ -577,48 +504,38 @@ const Clients: React.FC<ClientsProps> = ({
                     <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded ${client.type === 'Fábrica' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{client.type || 'Fazenda'}</span>
                   </td>
                   
-                  {/* ADMIN: Exibe Técnico(s) clicável no lugar da Unidade */}
-                  {isAdmin ? (
-                      <td className="px-4 py-3 border-r border-slate-50">
-                          <button 
-                            onClick={(e) => handleOpenTransferModal(e, client)}
-                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 text-sm font-bold text-blue-600 transition-colors border border-transparent hover:border-slate-200"
-                            title="Gerenciar Gestores do Cliente"
-                          >
-                             <ArrowRightLeft size={14} />
-                             {getTechnicianDisplay(client)}
-                          </button>
-                      </td>
-                  ) : (
-                      <td className="px-4 py-3 border-r border-slate-50">
-                          <p className="text-sm font-bold text-slate-700">{client.name}</p>
-                          <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
-                            {client.farms?.length || 0} {client.farms?.length === 1 ? 'Fazenda' : 'Fazendas'}
-                          </p>
-                          {isSynced && <span title="Importado" className="flex h-1.5 w-1.5 bg-blue-500 rounded-full mt-1"></span>}
-                      </td>
+                  {isAdmin && (
+                    <td className="px-4 py-3 border-r border-slate-50">
+                        <button 
+                          onClick={(e) => handleOpenTransferModal(e, client)}
+                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-slate-100 text-sm font-bold text-blue-600 transition-colors border border-transparent hover:border-slate-200"
+                          title="Gerenciar Gestores do Cliente"
+                        >
+                           <ArrowRightLeft size={14} />
+                           {getTechnicianDisplay(client)}
+                        </button>
+                    </td>
                   )}
 
-                  {/* ADMIN: Exibe Unidade e Responsável juntos para não perder info */}
-                  {isAdmin ? (
-                      <td className="px-4 py-3 border-r border-slate-50">
-                          <p className="text-sm font-bold text-slate-700">{client.name}</p>
-                          <p className="text-[10px] text-slate-400 font-medium">
-                            {client.farms?.length || 0} Fazenda(s)
-                          </p>
-                      </td>
-                  ) : (
-                      <td className="px-4 py-3 border-r border-slate-50">
-                        <p className="text-sm font-bold text-slate-700">
-                            {client.farms?.[0]?.contacts?.[0]?.name || client.name}
-                        </p>
-                        <p className="text-[10px] text-slate-400 font-medium italic">
-                            {client.farms?.[0]?.contacts?.[0]?.role || 'Proprietário'}
-                        </p>
-                      </td>
-                  )}
+                  <td className="px-4 py-3 border-r border-slate-50">
+                      <p className="text-sm font-bold text-slate-700">{client.name}</p>
+                      <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">
+                        {client.farms?.length || 0} {client.farms?.length === 1 ? 'Fazenda' : 'Fazendas'}
+                      </p>
+                      {isSynced && <span title="Importado" className="flex h-1.5 w-1.5 bg-blue-500 rounded-full mt-1"></span>}
+                  </td>
+
+                  <td className="px-4 py-3 border-r border-slate-50">
+                    <p className="text-sm font-bold text-slate-700">
+                        {client.farms?.[0]?.contacts?.[0]?.name || client.name}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-medium italic">
+                        {client.farms?.[0]?.contacts?.[0]?.role || 'Proprietário'}
+                    </p>
+                  </td>
 
                   <td className="px-4 py-3 border-r border-slate-50 text-center font-bold text-slate-700 text-xs">{openDeals}</td>
+                  <td className="px-4 py-3 border-r border-slate-50 text-center font-bold text-slate-700 text-xs">{client.herdSize || 0}</td>
                   <td className="px-4 py-3 text-center text-xs font-bold text-slate-500">{nextActivity ? new Date(nextActivity.dueDate).toLocaleDateString() : '-'}</td>
                   <td className="px-4 py-3 text-center">
                     <div className="flex items-center justify-center gap-1">
@@ -650,6 +567,7 @@ const Clients: React.FC<ClientsProps> = ({
             isOpen={isModalOpen}
             onClose={() => setIsModalOpen(false)}
             client={clientForm}
+            allUsers={allUsers}
             onSave={(finalClientData) => {
                 if (isEditing) {
                     onUpdateClient(finalClientData);
@@ -821,6 +739,37 @@ const Clients: React.FC<ClientsProps> = ({
                         {isMerging ? <Loader2 className="animate-spin" size={16} /> : <GitMerge size={16} />}
                         Mesclar e Salvar
                     </button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* MODAL DE SELEÇÃO DE FAZENDA */}
+      {clientToSelectFarm && (
+        <div className="fixed inset-0 z-[550] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+            <div className="bg-white rounded-[2.5rem] w-full max-w-md p-8 shadow-2xl relative border border-slate-100 flex flex-col max-h-[85vh]">
+                <div className="flex justify-between items-center mb-6">
+                    <h3 className="text-xl font-black text-slate-900 italic tracking-tighter uppercase">
+                        Selecionar Fazenda
+                    </h3>
+                    <button onClick={() => setClientToSelectFarm(null)} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors"><X size={20} /></button>
+                </div>
+                <div className="flex-1 overflow-y-auto max-h-60 custom-scrollbar space-y-2">
+                    {clientToSelectFarm.farms?.map(farm => (
+                        <button 
+                            key={farm.id} 
+                            onClick={() => {
+                                onNavigate('client_details', { clientId: clientToSelectFarm.id, farmId: farm.id, initialTab: 'deals' });
+                                setClientToSelectFarm(null);
+                            }}
+                            className="w-full p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between hover:border-zorion-500 hover:shadow-md transition-all text-left group"
+                        >
+                            <h4 className="font-black text-slate-800 text-sm">{farm.name}</h4>
+                            <div className="h-8 w-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 group-hover:bg-zorion-900 group-hover:text-white transition-colors">
+                                <ChevronRight size={14} />
+                            </div>
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>

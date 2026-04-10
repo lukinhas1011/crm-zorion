@@ -16,7 +16,7 @@ interface MapPageProps {
   user: User | null;
 }
 
-const MapPage: React.FC<MapPageProps> = ({ clients, visits, onSelectClient, user }) => {
+const MapPage: React.FC<MapPageProps> = ({ clients = [], visits = [], onSelectClient, user }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<any>(null);
   const markersLayerRef = useRef<any>(null);
@@ -112,7 +112,11 @@ const MapPage: React.FC<MapPageProps> = ({ clients, visits, onSelectClient, user
     const bounds = window.L.latLngBounds();
     let hasValidPoints = false;
 
-    const isAdmin = user.role === 'Admin' || user.email === 'l.rigolin@zorionan.com';
+    const isAdmin = user.role === 'Admin' || 
+                    user.email === 'l.rigolim@zorionan.com' || 
+                    user.email === 'l.rigolim@zorion.com' || 
+                    user.email === 'lrosadamaia64@gmail.com' ||
+                    user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83';
     const displayableClients = isAdmin 
       ? clients 
       : clients.filter(c => c.assignedTechnicianId === user.id || (c.assignedTechnicianIds && c.assignedTechnicianIds.includes(user.id)));
@@ -154,9 +158,14 @@ const MapPage: React.FC<MapPageProps> = ({ clients, visits, onSelectClient, user
              </p>
              <p class="text-[9px] font-medium text-slate-400 truncate">${client.location.address || 'Sem endereço'}</p>
           </div>
-          <button id="btn-map-${client.id}" class="w-full bg-zorion-900 text-white text-[10px] font-black py-2.5 px-3 rounded-xl shadow-lg active:scale-95 transition-all uppercase tracking-widest cursor-pointer hover:bg-zorion-800">
-            Abrir Ficha Técnica
-          </button>
+          <div class="flex flex-col gap-2">
+            <button id="btn-map-${client.id}" class="w-full bg-zorion-900 text-white text-[10px] font-black py-2.5 px-3 rounded-xl shadow-lg active:scale-95 transition-all uppercase tracking-widest cursor-pointer hover:bg-zorion-800">
+              Abrir Ficha Técnica
+            </button>
+            <button id="btn-open-maps-${client.id}" class="w-full bg-blue-600 text-white text-[10px] font-black py-2.5 px-3 rounded-xl shadow-lg active:scale-95 transition-all uppercase tracking-widest cursor-pointer hover:bg-blue-700">
+              Abrir no Maps
+            </button>
+          </div>
         </div>
       `;
 
@@ -173,6 +182,13 @@ const MapPage: React.FC<MapPageProps> = ({ clients, visits, onSelectClient, user
             btn.onclick = (e) => {
               e.stopPropagation();
               onSelectClient(client.id);
+            };
+          }
+          const btnMaps = document.getElementById(`btn-open-maps-${client.id}`);
+          if (btnMaps) {
+            btnMaps.onclick = (e) => {
+              e.stopPropagation();
+              window.open(`https://www.google.com/maps/search/?api=1&query=${lat},${lng}`, '_blank');
             };
           }
         }, 100);

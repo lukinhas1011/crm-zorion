@@ -25,7 +25,7 @@ interface VisitsProps {
   user?: User;
 }
 
-const Visits: React.FC<VisitsProps> = ({ visits, activities = [], clients, onSelectClient, onEditVisit, onDeleteVisit, onUpdateVisit, user }) => {
+const Visits: React.FC<VisitsProps> = ({ visits = [], activities = [], clients = [], onSelectClient, onEditVisit, onDeleteVisit, onUpdateVisit, user }) => {
   const [filter, setFilter] = useState<'Todas' | 'Agendada' | 'Concluída'>('Todas');
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -89,6 +89,13 @@ const Visits: React.FC<VisitsProps> = ({ visits, activities = [], clients, onSel
     if (selectedVisit) {
         setIsDeleting(true);
         try {
+            // Delete attachments if any
+            if (selectedVisit.attachments) {
+                for (const att of selectedVisit.attachments) {
+                    if (att.url) { try { await deleteVisitPhoto(att.url); } catch (e) { console.warn("Foto inacessível"); } }
+                }
+            }
+
             if (selectedVisit.recordType === 'activity') {
                 // Se for uma atividade (WhatsApp), deleta da coleção de atividades
                 await deleteDoc(doc(db, COLLECTIONS.ACTIVITIES, selectedVisit.id));
@@ -170,6 +177,28 @@ const Visits: React.FC<VisitsProps> = ({ visits, activities = [], clients, onSel
     const d = new Date(isoString);
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
     return d.toISOString().slice(0, 16);
+  };
+
+  const getAccessibleMediaUrl = (url: string) => {
+    if (!url) return '';
+    
+    // Se já for uma URL relativa ou do próprio domínio, retorna direto
+    if (url.startsWith('/') || url.startsWith('./') || url.includes(window.location.host)) return url;
+    
+    // URLs do Firebase Storage não precisam de proxy, elas já têm CORS configurado
+    if (url.includes('firebasestorage.googleapis.com')) return url;
+    
+    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas se estivermos no ambiente que o suporta
+    const isLocalOrPreview = window.location.hostname === 'localhost' || 
+                             window.location.hostname.includes('ais-dev') || 
+                             window.location.hostname.includes('ais-pre');
+                             
+    if (isLocalOrPreview) {
+      return `/api/whatsapp/proxy-media?url=${encodeURIComponent(url)}`;
+    }
+    
+    // Em produção (Firebase Hosting), se não for Firebase Storage, tentamos carregar direto
+    return url;
   };
 
   // --- UNIFICAÇÃO DE ATIVIDADES COMO VISITAS ---
@@ -390,7 +419,7 @@ const Visits: React.FC<VisitsProps> = ({ visits, activities = [], clients, onSel
                                         {clients.find(c => c.id === selectedVisit.clientId)?.name}
                                     </h3>
                                     <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mt-1">
-                                        {selectedVisit.purpose} • {clients.find(c => c.id === selectedVisit.clientId)?.farmName}
+                                        {selectedVisit.purpose} • {clients.find(c => c.id === selectedVisit.clientId)?.farms?.[0]?.name}
                                     </p>
                                 </>
                             )}
@@ -442,7 +471,7 @@ const Visits: React.FC<VisitsProps> = ({ visits, activities = [], clients, onSel
                                     value={editFormData.clientId}
                                     onChange={e => setEditFormData({...editFormData, clientId: e.target.value})}
                                 >
-                                    {clients.map(c => <option key={c.id} value={c.id}>{c.name} ({c.farmName})</option>)}
+                                    {clients.map(c => <option key={c.id} value={c.id}>{c.name} ({c.farms?.[0]?.name || 'Sem unidade'})</option>)}
                                 </select>
                             ) : (
                                 <button onClick={() => onSelectClient(selectedVisit.clientId)} className="text-xs font-bold text-blue-600 truncate underline decoration-blue-200">
@@ -521,7 +550,7 @@ const Visits: React.FC<VisitsProps> = ({ visits, activities = [], clients, onSel
                                                 className="aspect-square bg-white rounded-xl border border-slate-100 flex flex-col items-center justify-center hover:border-zorion-500 hover:shadow-md transition-all group relative overflow-hidden"
                                             >
                                                 {att.type === 'image' ? (
-                                                    <img src={att.url} className="absolute inset-0 w-full h-full object-cover" alt="Anexo" />
+                                                    <img src={getAccessibleMediaUrl(att.url)} className="absolute inset-0 w-full h-full object-cover" alt="Anexo" referrerPolicy="no-referrer" />
                                                 ) : (
                                                     <div className="flex flex-col items-center gap-1">
                                                         {getFileIcon(att.type)}
@@ -531,7 +560,7 @@ const Visits: React.FC<VisitsProps> = ({ visits, activities = [], clients, onSel
                                                 
                                                 <div className="absolute inset-0 bg-slate-900/60 flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <a 
-                                                        href={att.url} 
+                                                        href={getAccessibleMediaUrl(att.url)} 
                                                         target="_blank" 
                                                         rel="noopener noreferrer"
                                                         className="p-2 bg-white text-slate-800 rounded-lg hover:bg-emerald-500 hover:text-white transition-all shadow-lg"

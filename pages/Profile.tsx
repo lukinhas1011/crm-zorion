@@ -5,6 +5,7 @@ import { db } from '../services/firebase';
 import { COLLECTIONS, prepareForSave } from '../services/dbSchema';
 import { User as UserIcon, Phone, Mail, Save, Loader2 } from 'lucide-react';
 import { Button } from '../components/Button';
+import { GeminiUsageDashboard } from '../components/GeminiUsageDashboard';
 
 interface ProfileProps {
   user: User;
@@ -42,6 +43,12 @@ const Profile: React.FC<ProfileProps> = ({ user, onUpdateUser }) => {
         <h1 className="text-3xl font-black text-slate-900 italic tracking-tighter uppercase mb-2">Meu Perfil</h1>
         <p className="text-slate-500 font-medium">Gerencie suas informações pessoais e de contato.</p>
       </div>
+
+      {(user.email.includes('lucas.maia') || user.email === 'lrosadamaia64@gmail.com' || user.email === 'l.rigolim@zorionan.com' || user.email === 'l.rigolim@zorion.com' || user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83') && (
+        <div className="mb-8">
+          <GeminiUsageDashboard />
+        </div>
+      )}
 
       <div className="bg-white rounded-[2.5rem] p-8 shadow-xl shadow-slate-200/50 border border-slate-100">
         <div className="flex items-center gap-6 mb-8 pb-8 border-b border-slate-50">

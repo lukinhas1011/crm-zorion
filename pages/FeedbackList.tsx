@@ -4,6 +4,7 @@ import { Feedback } from '../types';
 import { collection, onSnapshot, query, orderBy, doc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { COLLECTIONS } from '../services/dbSchema';
+import { deleteVisitPhoto } from '../services/storageService';
 import { 
   Bug, Lightbulb, CheckCircle2, Circle, Trash2, 
   User, Calendar, Image as ImageIcon, ExternalLink, X,
@@ -37,6 +38,9 @@ const FeedbackList: React.FC = () => {
     if (!feedbackToDelete) return;
     setIsDeleting(true);
     try {
+      if (feedbackToDelete.mediaUrl) {
+        await deleteVisitPhoto(feedbackToDelete.mediaUrl);
+      }
       await deleteDoc(doc(db, COLLECTIONS.FEEDBACK, feedbackToDelete.id));
       setFeedbackToDelete(null);
     } catch (error) {

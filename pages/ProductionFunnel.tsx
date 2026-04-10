@@ -1,5 +1,5 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
-import { Deal, Stage, Activity, Client, User, CatalogItem, Visit, Attachment, DealProduct } from '../types';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
+import { Deal, Stage, Activity, Client, User, CatalogItem, Visit, Attachment, DealProduct, WhatsAppMessage } from '../types';
 import { 
   Plus, X, BarChart3, Trash2, Beef, Package, 
   Phone, Calendar, DollarSign, User as UserIcon, 
@@ -31,11 +31,15 @@ interface ProductionFunnelProps {
   onAddCatalogItem?: (item: CatalogItem) => void; 
   pendingDealId?: string;
   createForClientId?: string;
+  initialMessageData?: WhatsAppMessage;
   onAddActivity: (activity: Activity) => void;
   onUpdateActivity?: (activity: Activity) => void;
   onDeleteActivity?: (activityId: string) => void;
   currencyMode?: 'BRL' | 'USD';
   exchangeRate?: number;
+  allUsers?: User[];
+  globalTechnicianFilter?: string;
+  setGlobalTechnicianFilter?: (id: string) => void;
 }
 
 const PRODUCTION_PIPELINE_ID = 'pip_capacidade';
@@ -48,12 +52,14 @@ const CAPACITY_STAGES: Stage[] = [
 ];
 
 const ProductionFunnel: React.FC<ProductionFunnelProps> = ({ 
-  deals, activities, clients, visits = [], catalog, user, 
+  deals = [], activities = [], clients = [], visits = [], catalog = [], user, 
   onAddDeal, onUpdateDeal, onDeleteDeal, onSelectClient, onAddVisit, onUpdateClient, onAddCatalogItem, pendingDealId,
-  createForClientId, onAddActivity, onUpdateActivity, onDeleteActivity, currencyMode = 'USD', exchangeRate = 1
+  createForClientId, initialMessageData, onAddActivity, onUpdateActivity, onDeleteActivity, currencyMode = 'USD', exchangeRate = 1,
+  allUsers = [], globalTechnicianFilter = '', setGlobalTechnicianFilter
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [processedContext, setProcessedContext] = useState<{createFor?: string, pendingDeal?: string}>({});
   const [editDealData, setEditDealData] = useState<Deal | null>(null);
   const [activeTab, setActiveTab] = useState<'interaction' | 'formula'>('interaction');
 
@@ -70,10 +76,15 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
   const [itemToDelete, setItemToDelete] = useState<{type: 'attachment' | 'activity' | 'deal', data: any} | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const [quickNote, setQuickNote] = useState('');
-  const [interactionType, setInteractionType] = useState<'Call' | 'Email' | 'Whatsapp' | 'Meeting' | 'Task'>('Call');
+  const [quickNote, setQuickNote] = useState(initialMessageData?.text || '');
+  const [interactionType, setInteractionType] = useState<'Call' | 'Email' | 'Whatsapp' | 'Meeting' | 'Task'>('Whatsapp');
   const [interactionProduct, setInteractionProduct] = useState(''); // Produto específico da visita
   const [interactionDate, setInteractionDate] = useState(() => {
+    if (initialMessageData?.receivedAt) {
+      const date = new Date(initialMessageData.receivedAt);
+      date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+      return date.toISOString().slice(0, 16);
+    }
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     return now.toISOString().slice(0, 16);
@@ -97,6 +108,30 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const editActFileInputRef = useRef<HTMLInputElement>(null);
+
+
+
+  const getAccessibleMediaUrl = (url: string) => {
+    if (!url) return '';
+    
+    // Se já for uma URL relativa ou do próprio domínio, retorna direto
+    if (url.startsWith('/') || url.startsWith('./') || url.includes(window.location.host)) return url;
+    
+    // URLs do Firebase Storage não precisam de proxy, elas já têm CORS configurado
+    if (url.includes('firebasestorage.googleapis.com')) return url;
+    
+    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas se estivermos no ambiente que o suporta
+    const isLocalOrPreview = window.location.hostname === 'localhost' || 
+                             window.location.hostname.includes('ais-dev') || 
+                             window.location.hostname.includes('ais-pre');
+                             
+    if (isLocalOrPreview) {
+      return `/api/whatsapp/proxy-media?url=${encodeURIComponent(url)}`;
+    }
+    
+    // Em produção (Firebase Hosting), se não for Firebase Storage, tentamos carregar direto
+    return url;
+  };
 
   // Abre o modal de seleção antes do modal de Deal
   const handleStartNewDeal = () => {
@@ -176,7 +211,7 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
     setIsQuickAddContactOpen(false);
   };
 
-  const openDealModalForClient = (client: Client) => {
+  const openDealModalForClient = useCallback((client: Client) => {
     const newDeal: Deal = {
         id: `deal_prod_${Date.now()}`,
         title: 'Nova Ocupação',
@@ -197,19 +232,99 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
         ownerName: user.name,
         visibility: 'Team',
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        description: initialMessageData ? `${initialMessageData.text || ''}${initialMessageData.mediaUrls ? `\n\n${initialMessageData.mediaUrls.length} Mídias anexadas` : (initialMessageData.mediaUrl ? `\n\nMídia: ${initialMessageData.mediaUrl} (${initialMessageData.mediaType})` : '')}\n\nRecebido em: ${new Date(initialMessageData.receivedAt).toLocaleString('pt-BR')}` : '',
+        attachments: initialMessageData?.mediaUrls ? initialMessageData.mediaUrls.map((m, i) => ({
+          id: `att_${Date.now()}_${i}`,
+          name: (m.type?.startsWith('image') || m.type === 'image') ? `Imagem WhatsApp ${i+1}` : `Documento WhatsApp ${i+1}`,
+          url: m.url,
+          type: (m.type?.startsWith('image') || m.type === 'image') ? 'image' : 'document',
+          createdAt: new Date().toISOString()
+        })) : (initialMessageData?.mediaUrl ? [{
+          id: `att_${Date.now()}`,
+          name: (initialMessageData.mediaType?.startsWith('image') || initialMessageData.mediaType === 'image') ? 'Imagem WhatsApp' : 'Documento WhatsApp',
+          url: initialMessageData.mediaUrl,
+          type: (initialMessageData.mediaType?.startsWith('image') || initialMessageData.mediaType === 'image') ? 'image' : 'document',
+          createdAt: new Date().toISOString()
+        }] : [])
     };
     
-    onAddDeal(newDeal);
-
     setEditDealData(newDeal);
     setQuickFiles([]);
     setInteractionProduct('');
+    if (initialMessageData) {
+      setQuickNote(initialMessageData.text || '');
+      setInteractionType('Whatsapp');
+    }
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     setInteractionDate(now.toISOString().slice(0, 16));
     setIsEditModalOpen(true);
-  };
+  }, [initialMessageData, user.id, user.name, onAddDeal]);
+
+  useEffect(() => {
+    if (createForClientId && processedContext.createFor !== createForClientId) {
+      const client = clients.find(c => c.id === createForClientId);
+      if (client) {
+        openDealModalForClient(client);
+        setProcessedContext(prev => ({ ...prev, createFor: createForClientId }));
+      }
+    } else if (pendingDealId && processedContext.pendingDeal !== pendingDealId) {
+      const deal = deals.find(d => d.id === pendingDealId);
+      if (deal) {
+        setEditDealData(deal);
+        if (initialMessageData) {
+          setQuickNote(initialMessageData.text || '');
+          setInteractionType('Whatsapp');
+        }
+        setIsEditModalOpen(true);
+        setProcessedContext(prev => ({ ...prev, pendingDeal: pendingDealId }));
+      }
+    }
+  }, [createForClientId, pendingDealId, clients, deals, openDealModalForClient, initialMessageData, processedContext]);
+
+  useEffect(() => {
+    const fetchAndAddMedia = async () => {
+      if (isEditModalOpen) {
+        if (initialMessageData?.mediaUrls) {
+          for (let i = 0; i < initialMessageData.mediaUrls.length; i++) {
+            const m = initialMessageData.mediaUrls[i];
+            try {
+              const accessibleUrl = getAccessibleMediaUrl(m.url);
+              const response = await fetch(accessibleUrl);
+              if (!response.ok) throw new Error('Failed to fetch media');
+              const blob = await response.blob();
+              const filename = m.type === 'image' ? `whatsapp_image_${i+1}.jpg` : `whatsapp_document_${i+1}.pdf`;
+              const file = new File([blob], filename, { type: blob.type });
+              setQuickFiles(prev => {
+                if (prev.some(f => f.name === filename && f.size === file.size)) return prev;
+                return [...prev, file];
+              });
+            } catch (error) {
+              console.error('Error fetching WhatsApp media:', error);
+            }
+          }
+        } else if (initialMessageData?.mediaUrl) {
+          try {
+            const accessibleUrl = getAccessibleMediaUrl(initialMessageData.mediaUrl);
+            const response = await fetch(accessibleUrl);
+            if (!response.ok) throw new Error('Failed to fetch media');
+            const blob = await response.blob();
+            const filename = initialMessageData.mediaType === 'image' ? 'whatsapp_image.jpg' : 'whatsapp_document.pdf';
+            const file = new File([blob], filename, { type: blob.type });
+            setQuickFiles(prev => {
+              if (prev.some(f => f.name === filename && f.size === file.size)) return prev;
+              return [...prev, file];
+            });
+          } catch (error) {
+            console.error('Error fetching WhatsApp media:', error);
+          }
+        }
+      }
+    };
+
+    fetchAndAddMedia();
+  }, [initialMessageData, isEditModalOpen]);
 
   const handleEditDealClick = (d: Deal) => {
     setEditDealData(d);
@@ -261,7 +376,10 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
         await handleRegisterInteraction();
     }
 
-    onUpdateDeal(editDealData);
+    const isNew = !deals.some(d => d.id === editDealData.id);
+    if (isNew) onAddDeal(editDealData as Deal);
+    else onUpdateDeal(editDealData as Deal);
+    
     setIsEditModalOpen(false);
   };
 
@@ -385,8 +503,29 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
           setEditingActivity(updatedAct);
         }
       } else if (itemToDelete.type === 'activity' && onDeleteActivity) {
+        const activity = activities.find(a => a.id === itemToDelete.data.id);
+        if (activity?.attachments) {
+          for (const att of activity.attachments) {
+            if (att.url) { try { await deleteVisitPhoto(att.url); } catch (e) { console.warn("Foto inacessível"); } }
+          }
+        }
         await onDeleteActivity(itemToDelete.data.id);
       } else if (itemToDelete.type === 'deal' && onDeleteDeal) {
+        const deal = deals.find(d => d.id === itemToDelete.data.id);
+        if (deal?.attachments) {
+          for (const att of deal.attachments) {
+            if (att.url) { try { await deleteVisitPhoto(att.url); } catch (e) { console.warn("Foto inacessível"); } }
+          }
+        }
+        const dealActivities = activities.filter(a => a.dealId === itemToDelete.data.id);
+        for (const act of dealActivities) {
+          if (act.attachments) {
+            for (const att of act.attachments) {
+              if (att.url) { try { await deleteVisitPhoto(att.url); } catch (e) { console.warn("Foto inacessível"); } }
+            }
+          }
+          if (onDeleteActivity) await onDeleteActivity(act.id);
+        }
         await onDeleteDeal(itemToDelete.data.id);
         setIsEditModalOpen(false);
       } else if (itemToDelete.type === 'contact' && onUpdateClient) {
@@ -425,7 +564,7 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
   const filteredDeals = useMemo(() => {
     return deals.filter(d => {
       const isFromCapacityPipeline = CAPACITY_STAGES.some(s => s.id === d.stageId);
-      const matchesSearch = d.title.toLowerCase().includes(searchTerm.toLowerCase()) || d.farmName.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchesSearch = d.title?.toLowerCase().includes(searchTerm.toLowerCase()) || d.farmName?.toLowerCase().includes(searchTerm.toLowerCase());
       return d.status === 'Open' && matchesSearch && isFromCapacityPipeline;
     });
   }, [deals, searchTerm]);
@@ -452,9 +591,51 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
              <BarChart3 size={18} className="text-zorion-900" />
              <h3 className="text-sm font-black uppercase tracking-widest text-slate-800 italic">Clientes Ativos</h3>
              <input type="text" placeholder="Filtrar..." className="ml-4 px-4 py-2 bg-slate-50 border rounded-xl text-xs font-bold outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+
+             {setGlobalTechnicianFilter && (
+                <div className="ml-4 flex items-center gap-2">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Vendedor:</span>
+                  <select 
+                    value={globalTechnicianFilter}
+                    onChange={e => setGlobalTechnicianFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border rounded-xl text-[10px] font-bold outline-none focus:border-zorion-500 transition-colors appearance-none"
+                  >
+                    <option value="">Todos</option>
+                    {allUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
          </div>
          <Button onClick={handleStartNewDeal} className="bg-zorion-900 text-white px-6 py-2.5 rounded-xl font-black text-xs uppercase shadow-lg">Novo cliente</Button>
       </div>
+
+      {/* Filtro Mobile */}
+      {setGlobalTechnicianFilter && (
+        <div className="md:hidden flex-none bg-white border-b px-4 py-2 flex items-center justify-between z-20">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+            <span className="text-[9px] font-black text-slate-400 uppercase whitespace-nowrap">Vendedor:</span>
+            <select 
+              value={globalTechnicianFilter}
+              onChange={e => setGlobalTechnicianFilter(e.target.value)}
+              className="px-2 py-1 bg-slate-50 border rounded-lg text-[10px] font-bold outline-none"
+            >
+              <option value="">Todos</option>
+              {allUsers.map(u => (
+                <option key={u.id} value={u.id}>{u.name || u.email}</option>
+              ))}
+            </select>
+          </div>
+          <input 
+            type="text" 
+            placeholder="Filtrar..." 
+            className="ml-2 px-3 py-1 bg-slate-50 border rounded-lg text-[10px] font-bold outline-none w-24" 
+            value={searchTerm} 
+            onChange={e => setSearchTerm(e.target.value)} 
+          />
+        </div>
+      )}
 
       <div className="flex-1 flex overflow-x-auto p-2 md:p-4 gap-2 md:gap-4 snap-x snap-mandatory md:snap-none">
         {CAPACITY_STAGES.map((stage, idx) => (
@@ -496,25 +677,34 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
                     </div>
                     
                     <div className="flex-1 overflow-y-auto max-h-60 custom-scrollbar space-y-2">
-                        {clients.filter(c => 
-                            c.name.toLowerCase().includes(clientSearch.toLowerCase()) || 
-                            c.farmName.toLowerCase().includes(clientSearch.toLowerCase())
-                        ).map(c => (
+                        {clients.filter(c => {
+                            const search = clientSearch.toLowerCase();
+                            const matchesName = c.name?.toLowerCase().includes(search);
+                            const matchesFarm = c.farms?.some(f => f.name?.toLowerCase().includes(search));
+                            return matchesName || matchesFarm;
+                        }).map(c => (
                             <button 
                                 key={c.id} 
                                 onClick={() => handleSelectExistingClient(c)}
                                 className="w-full p-4 bg-white border border-slate-100 rounded-2xl flex items-center justify-between hover:border-zorion-500 hover:shadow-md transition-all text-left group"
                             >
                                 <div>
-                                    <h4 className="font-black text-slate-800 text-sm">{c.farmName}</h4>
-                                    <p className="text-[10px] font-bold text-slate-400 uppercase">{c.name}</p>
+                                    <h4 className="font-black text-slate-800 text-sm">{c.name}</h4>
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase">
+                                        {c.farms && c.farms.length > 0 
+                                            ? c.farms.map(f => f.name).join(', ') 
+                                            : 'Sem unidades'}
+                                    </p>
                                 </div>
                                 <div className="h-8 w-8 bg-slate-50 rounded-full flex items-center justify-center text-slate-300 group-hover:bg-zorion-900 group-hover:text-white transition-colors">
                                     <Check size={14} />
                                 </div>
                             </button>
                         ))}
-                        {clientSearch && clients.filter(c => c.name.toLowerCase().includes(clientSearch.toLowerCase())).length === 0 && (
+                        {clientSearch && clients.filter(c => {
+                            const search = clientSearch.toLowerCase();
+                            return c.name?.toLowerCase().includes(search) || c.farms?.some(f => f.name?.toLowerCase().includes(search));
+                        }).length === 0 && (
                             <p className="text-center text-slate-400 text-xs font-bold py-4">Nenhum cliente encontrado</p>
                         )}
                     </div>
@@ -796,7 +986,8 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
                         </button>
                     </div>
 
-                    {activeTab === 'interaction' ? (
+                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
+                        {activeTab === 'interaction' ? (
                         <>
                             <h4 className="text-xs font-black uppercase text-slate-800 mb-4 flex items-center gap-2">
                                 <MessageSquare size={16} className="text-blue-600" /> Registro de Campo
@@ -894,6 +1085,7 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
                             </div>
                         </>
                     )}
+                    </div>
                 </div>
 
                 {/* COLUNA DIREITA: PRODUTOS E HISTÓRICO (Agora tudo rola junto) */}
@@ -987,7 +1179,12 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
                                                     {act.attachments.map(att => (
                                                         <div key={att.id} className="relative group/att bg-slate-50 rounded-xl overflow-hidden border border-slate-100 aspect-square flex items-center justify-center hover:border-blue-200 transition-colors">
                                                             {att.type === 'image' ? (
-                                                                <img src={att.url} alt={att.name} className="absolute inset-0 w-full h-full object-cover" />
+                                                            <img 
+                                                              src={getAccessibleMediaUrl(att.url)} 
+                                                              alt={att.name} 
+                                                              referrerPolicy="no-referrer"
+                                                              className="absolute inset-0 w-full h-full object-cover" 
+                                                            />
                                                             ) : att.type === 'video' ? (
                                                                 <div className="flex flex-col items-center gap-1 text-slate-400">
                                                                     <Video size={24} />
@@ -1001,7 +1198,7 @@ const ProductionFunnel: React.FC<ProductionFunnelProps> = ({
                                                             )}
                                                             
                                                             <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover/att:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                                                                <a href={att.url} target="_blank" rel="noreferrer" className="p-1.5 bg-white rounded-lg text-slate-800 hover:bg-emerald-500 hover:text-white transition-colors"><ExternalLink size={14} /></a>
+                                                                <a href={getAccessibleMediaUrl(att.url)} target="_blank" rel="noreferrer" className="p-1.5 bg-white rounded-lg text-slate-800 hover:bg-emerald-500 hover:text-white transition-colors"><ExternalLink size={14} /></a>
                                                                 <button 
                                                                     type="button" 
                                                                     onClick={(e) => { e.preventDefault(); e.stopPropagation(); setItemToDelete({ type: 'attachment', data: { activity: act, attId: att.id } }); }} 

@@ -1,19 +1,21 @@
 
 import React, { useState } from 'react';
 import { X, Plus, Trash2, Beef, Factory, MapPin } from 'lucide-react';
-import { Client, Farm, Contact } from '../types';
+import { Client, Farm, Contact, User } from '../types';
 import { Button } from './Button';
+import { LocationPicker } from './LocationPicker';
 
 interface ClientEditModalProps {
     isOpen: boolean;
     onClose: () => void;
     client: Client;
     onSave: (updatedClient: Client) => void;
+    allUsers: User[];
 }
 
 const STANDARD_ROLES = ['Gerente', 'Técnico', 'Vendedor', 'Consultor', 'Proprietário'];
 
-export const ClientEditModal: React.FC<ClientEditModalProps> = ({ isOpen, onClose, client, onSave }) => {
+export const ClientEditModal: React.FC<ClientEditModalProps> = ({ isOpen, onClose, client, onSave, allUsers }) => {
     const [editData, setEditData] = useState<Client>({ ...client });
 
     if (!isOpen) return null;
@@ -31,32 +33,36 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({ isOpen, onClos
     };
 
     const handleRemoveFarm = (idx: number) => {
-        const newFarms = editData.farms.filter((_, i) => i !== idx);
+        const newFarms = (editData.farms || []).filter((_, i) => i !== idx);
         setEditData({ ...editData, farms: newFarms });
     };
 
     const handleUpdateFarm = (idx: number, updates: Partial<Farm>) => {
-        const newFarms = [...editData.farms];
+        const newFarms = [...(editData.farms || [])];
         newFarms[idx] = { ...newFarms[idx], ...updates };
         setEditData({ ...editData, farms: newFarms });
     };
 
     const handleAddContact = (farmIdx: number) => {
         const newContact: Contact = { id: `cont_${Date.now()}`, name: '', role: 'Gerente' };
-        const newFarms = [...editData.farms];
+        const newFarms = [...(editData.farms || [])];
         newFarms[farmIdx].contacts = [...(newFarms[farmIdx].contacts || []), newContact];
         setEditData({ ...editData, farms: newFarms });
     };
 
     const handleUpdateContact = (farmIdx: number, contactIdx: number, updates: Partial<Contact>) => {
-        const newFarms = [...editData.farms];
-        newFarms[farmIdx].contacts[contactIdx] = { ...newFarms[farmIdx].contacts[contactIdx], ...updates };
+        const newFarms = [...(editData.farms || [])];
+        if (newFarms[farmIdx] && newFarms[farmIdx].contacts) {
+            newFarms[farmIdx].contacts[contactIdx] = { ...newFarms[farmIdx].contacts[contactIdx], ...updates };
+        }
         setEditData({ ...editData, farms: newFarms });
     };
 
     const handleRemoveContact = (farmIdx: number, contactIdx: number) => {
-        const newFarms = [...editData.farms];
-        newFarms[farmIdx].contacts = newFarms[farmIdx].contacts.filter((_, i) => i !== contactIdx);
+        const newFarms = [...(editData.farms || [])];
+        if (newFarms[farmIdx] && newFarms[farmIdx].contacts) {
+            newFarms[farmIdx].contacts = newFarms[farmIdx].contacts.filter((_, i) => i !== contactIdx);
+        }
         setEditData({ ...editData, farms: newFarms });
     };
 
@@ -108,6 +114,20 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({ isOpen, onClos
                     <div className="space-y-2">
                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Nome do Cliente / Fábrica</label>
                         <input required className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500" value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} placeholder="Ex: Grupo AgroBarra ou BioRação Industrial" />
+                    </div>
+
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Responsável</label>
+                        <select 
+                            className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm outline-none focus:border-zorion-500"
+                            value={editData.assignedTechnicianId || ''}
+                            onChange={e => setEditData({...editData, assignedTechnicianId: e.target.value})}
+                        >
+                            <option value="">Selecione um responsável</option>
+                            {(allUsers || []).map(u => (
+                                <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                            ))}
+                        </select>
                     </div>
 
                     {/* SEÇÃO DE RESPONSÁVEIS DO CLIENTE */}
@@ -227,6 +247,14 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({ isOpen, onClos
                                         </div>
                                     </div>
 
+                                    <div className="pt-2">
+                                        <LocationPicker 
+                                            label="Localização da Fazenda"
+                                            value={farm.location}
+                                            onChange={(location) => handleUpdateFarm(farmIdx, { location })}
+                                        />
+                                    </div>
+
                                     <div className="space-y-3 pt-2">
                                         <div className="flex items-center justify-between">
                                             <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Responsáveis</label>
@@ -309,7 +337,43 @@ export const ClientEditModal: React.FC<ClientEditModalProps> = ({ isOpen, onClos
 
                 <div className="flex gap-3 pt-8 border-t border-slate-100 mt-6">
                     <Button onClick={onClose} variant="outline" className="flex-1 py-4 rounded-2xl text-xs font-black uppercase">Cancelar</Button>
-                    <Button onClick={() => onSave(editData)} className="flex-1 py-4 rounded-2xl text-xs font-black uppercase">Salvar Alterações</Button>
+                    <Button onClick={() => {
+                        if (!editData.name) {
+                            alert("O nome do cliente/fábrica é obrigatório.");
+                            return;
+                        }
+
+                        let finalFarms = editData.farms || [];
+                        if (finalFarms.length === 0) {
+                            finalFarms = [{
+                                id: `farm_${Date.now()}`,
+                                name: editData.farmName || 'Fazenda Principal',
+                                location: editData.location || { lat: 0, lng: 0, address: '' },
+                                herdSize: editData.herdSize || 0,
+                                treatedHerdSize: editData.treatedHerdSize || 0,
+                                lots: editData.lots || [],
+                                contacts: [{
+                                    id: `cont_${Date.now()}`,
+                                    name: editData.name,
+                                    role: 'Proprietário'
+                                }]
+                            }];
+                        }
+
+                        const totalHerdSize = finalFarms.reduce((acc, farm) => acc + (farm.herdSize || 0), 0);
+                        const totalTreatedHerdSize = finalFarms.reduce((acc, farm) => acc + (farm.treatedHerdSize || 0), 0);
+
+                        const dataToSave = {
+                            ...editData,
+                            farmName: finalFarms[0]?.name || editData.farmName,
+                            farms: finalFarms,
+                            herdSize: totalHerdSize,
+                            treatedHerdSize: totalTreatedHerdSize,
+                            updatedAt: new Date().toISOString()
+                        };
+
+                        onSave(dataToSave);
+                    }} className="flex-1 py-4 rounded-2xl text-xs font-black uppercase">Salvar Alterações</Button>
                 </div>
             </div>
         </div>

@@ -242,12 +242,14 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     }
   };
 
+  const hasLocation = value?.lat !== 0 && value?.lat !== undefined;
+
   return (
     <div className="w-full">
       <label className="block text-xs font-black text-slate-400 uppercase tracking-widest mb-2 px-1 flex justify-between">
         {label}
-        {value?.lat !== 0 && value?.lat !== undefined && (
-            <span className="text-emerald-600 flex items-center gap-1"><Check size={12} /> PIN OK</span>
+        {hasLocation && (
+            <span className="text-emerald-600 flex items-center gap-1"><Check size={12} /> LOCALIZAÇÃO SALVA</span>
         )}
       </label>
       
@@ -257,14 +259,14 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
                 type="text"
                 value={addressInput}
                 onChange={handleManualAddressChange}
-                placeholder="Endereço ou abra o mapa..."
-                className="w-full p-4 bg-slate-50 border-2 border-slate-100 rounded-2xl text-sm font-bold text-slate-700 outline-none focus:border-emerald-500/30 transition-all"
+                placeholder={hasLocation ? `Coordenadas: ${value.lat.toFixed(4)}, ${value.lng.toFixed(4)}` : "Endereço ou abra o mapa..."}
+                className={`w-full p-4 rounded-2xl text-sm font-bold outline-none transition-all ${hasLocation ? 'bg-emerald-50 border-2 border-emerald-200 text-emerald-900 focus:border-emerald-500' : 'bg-slate-50 border-2 border-slate-100 text-slate-700 focus:border-emerald-500/30'}`}
             />
         </div>
         <button 
             type="button" 
             onClick={() => setIsMapOpen(true)}
-            className="flex-shrink-0 px-5 bg-white border-2 border-slate-100 text-slate-400 rounded-2xl hover:text-emerald-600 hover:border-emerald-100 transition-all shadow-sm active:scale-95"
+            className={`flex-shrink-0 px-5 rounded-2xl transition-all shadow-sm active:scale-95 flex items-center justify-center ${hasLocation ? 'bg-emerald-100 text-emerald-700 border-2 border-emerald-200 hover:bg-emerald-200' : 'bg-white border-2 border-slate-100 text-slate-400 hover:text-emerald-600 hover:border-emerald-100'}`}
         >
             <MapIcon size={20} />
         </button>

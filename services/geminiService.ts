@@ -1,8 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { Ingredient, DietRequirement, DietRecommendation } from '../types';
 import { db } from './firebase';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, collection, addDoc } from 'firebase/firestore';
 
 // Inicialização segura usando a chave de ambiente
 const getAiClient = () => {
@@ -16,6 +15,25 @@ const getAiClient = () => {
   }
   return new GoogleGenAI({ apiKey });
 };
+
+async function logGeminiUsage(
+  model: string,
+  functionality: string,
+  usage: any
+) {
+  try {
+    await addDoc(collection(db, 'gemini_usage_logs'), {
+      model,
+      functionality,
+      promptTokens: usage?.promptTokenCount || 0,
+      completionTokens: usage?.candidatesTokenCount || 0,
+      totalTokens: usage?.totalTokenCount || 0,
+      timestamp: new Date().toISOString()
+    });
+  } catch (e) {
+    console.warn("Usage log error:", e);
+  }
+}
 
 // Helper for persistent caching
 async function getCache(collection: string, key: string) {
@@ -41,67 +59,6 @@ async function setCache(collection: string, key: string, result: any) {
   }
 }
 
-export const generateNutritionPlan = async (
-  requirements: DietRequirement,
-  availableIngredients: Ingredient[]
-): Promise<DietRecommendation> => {
-  const cacheKey = JSON.stringify({ requirements, availableIngredients });
-  const cached = await getCache('nutrition', cacheKey);
-  if (cached) {
-    console.log("Using persistent cache for nutrition plan.");
-    return cached;
-  }
-
-  const ai = getAiClient();
-  const model = "gemini-3.1-flash-lite-preview";
-  const prompt = `Atue como um nutricionista especialista em bovinos de corte. Formule uma dieta diária de custo mínimo. 
-    Dados: Peso ${requirements.animalWeight}kg, Ganho Alvo ${requirements.targetGain}kg, Raça ${requirements.breed}. 
-    Ingredientes: ${availableIngredients.map(i => `${i.name} (P:${i.protein}%, E:${i.energy})`).join(', ')}`;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: prompt,
-      config: {
-        temperature: 0, // More deterministic and efficient
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            summary: { type: Type.STRING },
-            ingredients: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  amountKg: { type: Type.NUMBER },
-                  cost: { type: Type.NUMBER }
-                }
-              }
-            },
-            totalCost: { type: Type.NUMBER },
-            nutritionalAnalysis: {
-              type: Type.OBJECT,
-              properties: {
-                protein: { type: Type.STRING },
-                energy: { type: Type.STRING },
-                fiber: { type: Type.STRING }
-              }
-            }
-          }
-        }
-      }
-    });
-    
-    const result = JSON.parse(response.text || '{}') as DietRecommendation;
-    await setCache('nutrition', cacheKey, result);
-    return result;
-  } catch (error) {
-    console.error("Erro Nutrição:", error);
-    throw new Error("Erro ao gerar dieta técnica.");
-  }
-};
 
 export const summarizeVisitAudio = async (transcript: string, lot?: string, product?: string): Promise<string> => {
   if (!transcript || transcript.length < 10) return "Transcrição muito curta para resumir.";
@@ -137,6 +94,10 @@ export const summarizeVisitAudio = async (transcript: string, lot?: string, prod
       contents: prompt,
       config: { temperature: 0 }
     });
+
+    // @ts-ignore
+    await logGeminiUsage(model, 'visit_summary', response.usageMetadata);
+
     const result = response.text?.trim() || "Resumo não disponível.";
     await setCache('summary', cacheKey, result);
     return result;

@@ -3,9 +3,10 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { TrendingUp, Users, ClipboardCheck, Beef, Calendar as CalendarIcon, ChevronRight, Clock, MapPin, Sparkles, ChevronLeft, CalendarPlus, CheckCircle2, DollarSign, Target, Percent, Briefcase, Phone, Mail, MessageSquare, Cloud, Sun, CloudRain, Wind, Droplets, Thermometer, CloudLightning, CloudSnow, Loader2, Coins, X, User as UserIcon, Settings, Package, CheckSquare, Plus, Trash2 } from 'lucide-react';
 import { Client, Visit, User, Deal, Activity, Translator, Todo } from '../types';
 import { Button } from '../components/Button';
-import { collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDocs } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc } from 'firebase/firestore';
 import { db } from '../services/firebase';
 import { COLLECTIONS } from '../services/dbSchema';
+import { deleteVisitPhoto } from '../services/storageService';
 
 interface DashboardProps {
   clients: Client[];
@@ -150,7 +151,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [todoAssignee, setTodoAssignee] = useState('');
   const [allUsers, setAllUsers] = useState<User[]>([]);
 
-  const isAdmin = user && ((user.email || '').toLowerCase() === 'l.rigolin@zorionan.com' || user.role === 'Admin');
+  const isAdmin = user && (
+    (user.email || '').toLowerCase() === 'l.rigolim@zorionan.com' || 
+    (user.email || '').toLowerCase() === 'l.rigolim@zorion.com' || 
+    (user.email || '').toLowerCase() === 'lrosadamaia64@gmail.com' || 
+    user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83' ||
+    user.role === 'Admin'
+  );
 
   // Fetch Users for Admin (to assign tasks)
   useEffect(() => {
@@ -259,7 +266,15 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const toggleTodo = async (todo: Todo) => {
     try {
-      await updateDoc(doc(db, COLLECTIONS.TODOS, todo.id), {
+      const todoRef = doc(db, COLLECTIONS.TODOS, todo.id);
+      const todoSnap = await getDoc(todoRef);
+      
+      if (!todoSnap.exists()) {
+        console.warn("Documento não encontrado, ignorando atualização:", todo.id);
+        return;
+      }
+
+      await updateDoc(todoRef, {
         isDone: !todo.isDone
       });
     } catch (error) {
@@ -272,6 +287,7 @@ const Dashboard: React.FC<DashboardProps> = ({
       await deleteDoc(doc(db, COLLECTIONS.TODOS, id));
     } catch (error) {
       console.error("Error deleting todo:", error);
+      alert('Erro ao excluir tarefa. Verifique sua conexão ou permissões.');
     }
   };
 
@@ -279,6 +295,24 @@ const Dashboard: React.FC<DashboardProps> = ({
     if (!selectedEvent) return;
     try {
         const collectionName = selectedEvent.type === 'visit' ? COLLECTIONS.VISITS : COLLECTIONS.ACTIVITIES;
+        
+        // Delete attachments if any
+        if (selectedEvent.type === 'visit') {
+            const visit = visits.find(v => v.id === selectedEvent.id);
+            if (visit?.attachments) {
+                for (const att of visit.attachments) {
+                    if (att.url) { try { await deleteVisitPhoto(att.url); } catch (e) { console.warn("Foto inacessível"); } }
+                }
+            }
+        } else {
+            const activity = activities.find(a => a.id === selectedEvent.id);
+            if (activity?.attachments) {
+                for (const att of activity.attachments) {
+                    if (att.url) { try { await deleteVisitPhoto(att.url); } catch (e) { console.warn("Foto inacessível"); } }
+                }
+            }
+        }
+
         await deleteDoc(doc(db, collectionName, selectedEvent.id));
         setIsDeleteEventConfirmOpen(false);
         setSelectedEvent(null);
@@ -288,12 +322,12 @@ const Dashboard: React.FC<DashboardProps> = ({
     }
   };
 
-  const totalHerdSize = useMemo(() => clients.reduce((acc, client) => acc + (client.herdSize || 0), 0), [clients]);
-  const totalTreated = useMemo(() => clients.reduce((acc, client) => acc + (client.treatedHerdSize || 0), 0), [clients]);
+  const totalHerdSize = useMemo(() => (clients || []).reduce((acc, client) => acc + (client.herdSize || 0), 0), [clients]);
+  const totalTreated = useMemo(() => (clients || []).reduce((acc, client) => acc + (client.treatedHerdSize || 0), 0), [clients]);
   
   const currentMonthVisits = useMemo(() => {
     const now = new Date();
-    return visits.filter(v => {
+    return (visits || []).filter(v => {
       const vDate = new Date(v.date);
       return v.status === 'Concluída' && 
              vDate.getMonth() === now.getMonth() && 
@@ -303,8 +337,8 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const visitsByClient = useMemo(() => {
     const map = new Map<string, { count: number, farmName: string, clientName: string }>();
-    currentMonthVisits.forEach(v => {
-      const client = clients.find(c => c.id === v.clientId);
+    (currentMonthVisits || []).forEach(v => {
+      const client = (clients || []).find(c => c.id === v.clientId);
       const existing = map.get(v.clientId) || { count: 0, farmName: client?.farmName || 'Fazenda', clientName: client?.name || 'Cliente' };
       map.set(v.clientId, { ...existing, count: existing.count + 1 });
     });
@@ -312,14 +346,14 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [currentMonthVisits, clients]);
   
   const salesMetrics = useMemo(() => {
-    const activeDeals = deals.filter(d => d.status === 'Open');
+    const activeDeals = (deals || []).filter(d => d.status === 'Open');
     const totalPipelineUSD = activeDeals.reduce((acc, d) => acc + d.value, 0);
     
-    const wonDeals = deals.filter(d => d.status === 'Won');
-    const lostDeals = deals.filter(d => d.status === 'Lost');
+    const wonDeals = (deals || []).filter(d => d.status === 'Won');
+    const lostDeals = (deals || []).filter(d => d.status === 'Lost');
     const totalClosed = wonDeals.length + lostDeals.length;
     const winRate = totalClosed > 0 ? Math.round((wonDeals.length / totalClosed) * 100) : 0;
-    const pendingActivities = activities.filter(a => !a.isDone).length;
+    const pendingActivities = (activities || []).filter(a => !a.isDone).length;
     
     return { totalPipelineUSD, wonCount: wonDeals.length, winRate, pendingActivities };
   }, [deals, activities]);
@@ -336,8 +370,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
   const isSameDay = (d1: Date, d2: Date) => d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
   const getEventsForDay = (day: Date) => {
-    const dayVisits = visits.filter(v => isSameDay(new Date(v.date), day)).map(v => ({...v, type: 'visit'}));
-    const dayActivities = activities.filter(a => isSameDay(new Date(a.dueDate), day)).map(a => ({...a, type: 'activity', date: a.dueDate}));
+    const dayVisits = (visits || []).filter(v => isSameDay(new Date(v.date), day)).map(v => ({...v, type: 'visit'}));
+    const dayActivities = (activities || []).filter(a => isSameDay(new Date(a.dueDate), day)).map(a => ({...a, type: 'activity', date: a.dueDate}));
     return [...dayVisits, ...dayActivities];
   };
 
@@ -536,7 +570,7 @@ const Dashboard: React.FC<DashboardProps> = ({
            <div className="bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm">
              <h3 className="text-xs font-black text-slate-900 uppercase tracking-widest mb-6 px-1">{t('dash.destaques')}</h3>
              <div className="space-y-4">
-                {deals.filter(d => d.status === 'Open').slice(0, 3).map(deal => (
+                {(deals || []).filter(d => d.status === 'Open').slice(0, 3).map(deal => (
                     <button key={deal.id} onClick={() => onNavigate('sales')} className="w-full flex items-center gap-4 p-4 hover:bg-slate-50 rounded-2xl border border-transparent hover:border-slate-100 group">
                         <div className="h-10 w-10 bg-amber-100 text-amber-600 rounded-xl flex items-center justify-center"><DollarSign size={20}/></div>
                         <div className="flex-1 text-left">

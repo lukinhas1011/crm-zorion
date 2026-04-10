@@ -38,7 +38,7 @@ interface ClientDetailsProps {
 }
 
 const ClientDetails: React.FC<ClientDetailsProps> = ({ 
-  client, visits, deals, stages, pipelines, catalog, user, onBack, onAddVisit, onUpdateVisit, onUpdateClient, onAddCatalogItem, onNavigate,
+  client, visits = [], deals = [], stages = [], pipelines = [], catalog = [], user, onBack, onAddVisit, onUpdateVisit, onUpdateClient, onAddCatalogItem, onNavigate,
   activities = [], onAddActivity, onUpdateActivity, currencyMode = 'USD', exchangeRate = 1, initialTab = 'timeline'
 }) => {
   const isFactory = client.type === 'Fábrica';
@@ -46,7 +46,13 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
   const [isEditingClient, setIsEditingClient] = useState(false);
   const [isInteractionModalOpen, setIsInteractionModalOpen] = useState(false);
   
-  const isAdmin = user && (user.email === 'l.rigolin@zorionan.com' || user.role === 'Admin');
+  const isAdmin = user && (
+    user.email === 'l.rigolim@zorionan.com' || 
+    user.email === 'l.rigolim@zorion.com' || 
+    user.email === 'lrosadamaia64@gmail.com' || 
+    user.id === 'MkccVyRleBRnwnFvpLkkvzHYSC83' ||
+    user.role === 'Admin'
+  );
 
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [editActFiles, setEditActFiles] = useState<File[]>([]);
@@ -111,6 +117,28 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     onAddCatalogItem(newItem);
     setProduct(newItem.name);
     setIsQuickAddProductOpen(false);
+  };
+
+  const getAccessibleMediaUrl = (url: string) => {
+    if (!url) return '';
+    
+    // Se já for uma URL relativa ou do próprio domínio, retorna direto
+    if (url.startsWith('/') || url.startsWith('./') || url.includes(window.location.host)) return url;
+    
+    // URLs do Firebase Storage não precisam de proxy, elas já têm CORS configurado
+    if (url.includes('firebasestorage.googleapis.com')) return url;
+    
+    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas se estivermos no ambiente que o suporta
+    const isLocalOrPreview = window.location.hostname === 'localhost' || 
+                             window.location.hostname.includes('ais-dev') || 
+                             window.location.hostname.includes('ais-pre');
+                             
+    if (isLocalOrPreview) {
+      return `/api/whatsapp/proxy-media?url=${encodeURIComponent(url)}`;
+    }
+    
+    // Em produção (Firebase Hosting), se não for Firebase Storage, tentamos carregar direto
+    return url;
   };
 
   const handleSaveQuickVisit = async () => {
@@ -387,7 +415,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                             className="w-full p-3 bg-slate-50 border-2 border-transparent focus:border-zorion-900/10 rounded-xl text-xs font-bold text-slate-700 outline-none transition-colors bg-white"
                           >
                             <option value="">Nenhum Produto</option>
-                            {catalog.filter(c => c.type === 'product').map(c => (
+                            {(catalog || []).filter(c => c.type === 'product').map(c => (
                               <option key={c.id} value={c.name}>{c.name}</option>
                             ))}
                             <option value="NEW_PRODUCT" className="text-zorion-600 font-black">+ CADASTRAR NOVO PRODUTO</option>
@@ -442,14 +470,29 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                                 </div>
                                 <p className="text-xs font-medium text-slate-600 leading-relaxed whitespace-pre-wrap">{item.transcript || item.description}</p>
                                 {item.attachments?.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 mt-3">
+                                    <div className="flex flex-wrap gap-3 mt-4">
                                         {item.attachments.map((att: Attachment) => (
                                             <div key={att.id} className="relative group/att">
-                                                <a href={att.url} target="_blank" className="flex items-center gap-2 px-3 py-2 bg-slate-50 border rounded-xl hover:bg-slate-100">
-                                                    {att.type === 'image' ? <ImageIcon size={14} /> : <FileText size={14} />}
-                                                    <span className="text-[10px] font-bold truncate max-w-[120px]">{att.name}</span>
-                                                </a>
-                                                <button onClick={(e) => { e.stopPropagation(); setItemToDelete({ type: 'attachment', data: { item: item, type: item.itemType === 'visit' ? 'visit' : 'activity', attId: att.id } }); }} className="absolute -top-2 -right-2 h-6 w-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/att:opacity-100 shadow-md"><Trash2 size={12} /></button>
+                                                {att.type === 'image' ? (
+                                                  <div className="w-24 h-24 rounded-2xl overflow-hidden border border-slate-100 shadow-sm relative group/img">
+                                                    <img 
+                                                      src={getAccessibleMediaUrl(att.url)} 
+                                                      alt={att.name} 
+                                                      referrerPolicy="no-referrer"
+                                                      className="w-full h-full object-cover cursor-pointer hover:scale-110 transition-transform duration-500"
+                                                      onClick={() => window.open(getAccessibleMediaUrl(att.url), '_blank')}
+                                                    />
+                                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/img:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                                                      <ExternalLink size={14} className="text-white" />
+                                                    </div>
+                                                  </div>
+                                                ) : (
+                                                  <a href={getAccessibleMediaUrl(att.url)} target="_blank" className="flex items-center gap-2 px-3 py-2 bg-slate-50 border rounded-xl hover:bg-slate-100 transition-all">
+                                                      <FileText size={14} className="text-slate-400" />
+                                                      <span className="text-[10px] font-bold truncate max-w-[120px]">{att.name}</span>
+                                                  </a>
+                                                )}
+                                                <button onClick={(e) => { e.stopPropagation(); setItemToDelete({ type: 'attachment', data: { item: item, type: item.itemType === 'visit' ? 'visit' : 'activity', attId: att.id } }); }} className="absolute -top-2 -right-2 h-6 w-6 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/att:opacity-100 shadow-md transition-opacity z-10"><Trash2 size={12} /></button>
                                             </div>
                                         ))}
                                     </div>
@@ -599,10 +642,10 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
                    />
                  </div>
 
-                 {editingActivity.attachments && editingActivity.attachments.length > 0 && (
+                 {editingActivity.attachments && (editingActivity.attachments || []).length > 0 && (
                    <div className="space-y-2">
                      <p className="text-[9px] font-black uppercase text-slate-400 px-1">Anexos Atuais:</p>
-                     {editingActivity.attachments.map((att) => (
+                     {(editingActivity.attachments || []).map((att) => (
                        <div key={att.id} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100">
                           <div className="flex items-center gap-2 overflow-hidden">
                              {att.type === 'image' ? <ImageIcon size={12} className="text-purple-500" /> : <Paperclip size={12} className="text-slate-400" />}
