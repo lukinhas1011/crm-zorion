@@ -128,7 +128,7 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
     // URLs do Firebase Storage não precisam de proxy, elas já têm CORS configurado
     if (url.includes('firebasestorage.googleapis.com')) return url;
     
-    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas se estivermos no ambiente que o suporta
+    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas no ambiente local/preview
     const isLocalOrPreview = window.location.hostname === 'localhost' || 
                              window.location.hostname.includes('ais-dev') || 
                              window.location.hostname.includes('ais-pre');
@@ -137,7 +137,9 @@ const ClientDetails: React.FC<ClientDetailsProps> = ({
       return `/api/whatsapp/proxy-media?url=${encodeURIComponent(url)}`;
     }
     
-    // Em produção (Firebase Hosting), se não for Firebase Storage, tentamos carregar direto
+    // Em produção (Firebase Hosting sem backend), o proxy do AI Studio falha por causa do bloqueio
+    // de CORS/Interstitial. Portanto, retornamos a URL original e confiamos que o webhook
+    // já fez o re-upload para o Firebase Storage. Se for uma mensagem antiga, tentará carregar direto.
     return url;
   };
 

@@ -156,7 +156,7 @@ export default function WhatsAppInbox({ clients = [], user, onNavigate, stages =
     // URLs do Firebase Storage não precisam de proxy, elas já têm CORS configurado
     if (url.includes('firebasestorage.googleapis.com')) return url;
     
-    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas se estivermos no ambiente que o suporta
+    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas no ambiente local/preview
     const isLocalOrPreview = window.location.hostname === 'localhost' || 
                              window.location.hostname.includes('ais-dev') || 
                              window.location.hostname.includes('ais-pre');
@@ -165,7 +165,9 @@ export default function WhatsAppInbox({ clients = [], user, onNavigate, stages =
       return `/api/whatsapp/proxy-media?url=${encodeURIComponent(url)}`;
     }
     
-    // Em produção (Firebase Hosting), se não for Firebase Storage, tentamos carregar direto
+    // Em produção (Firebase Hosting sem backend), o proxy do AI Studio falha por causa do bloqueio
+    // de CORS/Interstitial. Portanto, retornamos a URL original e confiamos que o webhook
+    // já fez o re-upload para o Firebase Storage. Se for uma mensagem antiga, tentará carregar direto.
     return url;
   };
 
@@ -193,57 +195,20 @@ export default function WhatsAppInbox({ clients = [], user, onNavigate, stages =
         if (selectedMessage.mediaUrls) {
           for (let i = 0; i < selectedMessage.mediaUrls.length; i++) {
             const m = selectedMessage.mediaUrls[i];
-            try {
-              const accessibleUrl = getAccessibleMediaUrl(m.url);
-              const response = await fetch(accessibleUrl);
-              if (!response.ok) throw new Error('Failed to fetch media');
-              const blob = await response.blob();
-              const filename = m.type === 'image' ? `whatsapp_image_${i+1}.jpg` : `whatsapp_document_${i+1}.pdf`;
-              const file = new File([blob], filename, { type: blob.type });
-              
-              const url = await uploadVisitFile(file, selectedClient, actId);
-              atts.push({
-                id: `att_${Date.now()}_wa_${i}`,
-                url,
-                name: filename,
-                type: (m.type?.startsWith('image') ? 'image' : 'document') as any
-              });
-            } catch (error) {
-              console.error('Error uploading WA media to Storage:', error);
-              // Fallback to original URL if upload fails
-              atts.push({
-                id: `att_${Date.now()}_wa_${i}`,
-                url: m.url,
-                name: `WhatsApp ${m.type || 'Mídia'} ${i+1}`,
-                type: (m.type?.startsWith('image') ? 'image' : 'document') as any
-              });
-            }
+            atts.push({
+              id: `att_${Date.now()}_wa_${i}`,
+              url: m.url,
+              name: `WhatsApp ${m.type || 'Mídia'} ${i+1}`,
+              type: (m.type?.startsWith('image') ? 'image' : 'document') as any
+            });
           }
         } else if (selectedMessage.mediaUrl) {
-          try {
-            const accessibleUrl = getAccessibleMediaUrl(selectedMessage.mediaUrl);
-            const response = await fetch(accessibleUrl);
-            if (!response.ok) throw new Error('Failed to fetch media');
-            const blob = await response.blob();
-            const filename = selectedMessage.mediaType === 'image' ? 'whatsapp_image.jpg' : 'whatsapp_document.pdf';
-            const file = new File([blob], filename, { type: blob.type });
-            
-            const url = await uploadVisitFile(file, selectedClient, actId);
-            atts.push({
-              id: `att_${Date.now()}_wa`,
-              url,
-              name: filename,
-              type: (selectedMessage.mediaType?.startsWith('image') ? 'image' : 'document') as any
-            });
-          } catch (error) {
-            console.error('Error uploading WA media to Storage:', error);
-            atts.push({
-              id: `att_${Date.now()}_wa`,
-              url: selectedMessage.mediaUrl,
-              name: `WhatsApp ${selectedMessage.mediaType || 'Mídia'}`,
-              type: (selectedMessage.mediaType?.startsWith('image') ? 'image' : 'document') as any
-            });
-          }
+          atts.push({
+            id: `att_${Date.now()}_wa`,
+            url: selectedMessage.mediaUrl,
+            name: `WhatsApp ${selectedMessage.mediaType || 'Mídia'}`,
+            type: (selectedMessage.mediaType?.startsWith('image') ? 'image' : 'document') as any
+          });
         }
 
         const newActivity: Activity = {

@@ -161,10 +161,10 @@ export async function processWhatsAppMessage(payload: WhatsAppPayload): Promise<
             console.log('[WhatsApp Service] Uploading to Firebase Storage:', fileName);
             const storageRef = ref(storage, fileName);
             
-            // Em ambiente Node.js, Buffer.from é mais confiável para uploadBytes
-            const buffer = Buffer.from(response.data);
+            // Em ambiente Node.js, Uint8Array é mais compatível com o Firebase JS SDK (uploadBytes)
+            const uint8Array = new Uint8Array(response.data);
             
-            await uploadBytes(storageRef, buffer, {
+            await uploadBytes(storageRef, uint8Array, {
                 contentType: contentType,
                 customMetadata: {
                     'whatsapp_sender': phone,

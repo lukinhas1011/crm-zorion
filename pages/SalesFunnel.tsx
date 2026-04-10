@@ -91,6 +91,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
     return now.toISOString().slice(0, 16);
   });
   const [quickFiles, setQuickFiles] = useState<File[]>([]);
+  const [quickExistingMedia, setQuickExistingMedia] = useState<Attachment[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
@@ -152,6 +153,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
     };
     setEditDealData(newDeal);
     setQuickFiles([]);
+    setQuickExistingMedia([]);
     if (initialMessageData) {
       setQuickNote(initialMessageData.text || '');
       setInteractionType('Whatsapp');
@@ -190,6 +192,18 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
         if (initialMessageData?.mediaUrls) {
           for (let i = 0; i < initialMessageData.mediaUrls.length; i++) {
             const m = initialMessageData.mediaUrls[i];
+            if (m.url.includes('firebasestorage.googleapis.com')) {
+              setQuickExistingMedia(prev => {
+                if (prev.some(a => a.url === m.url)) return prev;
+                return [...prev, {
+                  id: `att_${Date.now()}_wa_${i}`,
+                  url: m.url,
+                  name: `WhatsApp ${m.type || 'Mídia'} ${i+1}`,
+                  type: (m.type?.startsWith('image') ? 'image' : 'document') as any
+                }];
+              });
+              continue;
+            }
             try {
               const accessibleUrl = getAccessibleMediaUrl(m.url);
               const response = await fetch(accessibleUrl);
@@ -206,19 +220,31 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
             }
           }
         } else if (initialMessageData?.mediaUrl) {
-          try {
-            const accessibleUrl = getAccessibleMediaUrl(initialMessageData.mediaUrl);
-            const response = await fetch(accessibleUrl);
-            if (!response.ok) throw new Error('Failed to fetch media');
-            const blob = await response.blob();
-            const filename = initialMessageData.mediaType === 'image' ? 'whatsapp_image.jpg' : 'whatsapp_document.pdf';
-            const file = new File([blob], filename, { type: blob.type });
-            setQuickFiles(prev => {
-              if (prev.some(f => f.name === filename && f.size === file.size)) return prev;
-              return [...prev, file];
+          if (initialMessageData.mediaUrl.includes('firebasestorage.googleapis.com')) {
+            setQuickExistingMedia(prev => {
+              if (prev.some(a => a.url === initialMessageData.mediaUrl)) return prev;
+              return [...prev, {
+                id: `att_${Date.now()}_wa`,
+                url: initialMessageData.mediaUrl!,
+                name: `WhatsApp ${initialMessageData.mediaType || 'Mídia'}`,
+                type: (initialMessageData.mediaType?.startsWith('image') ? 'image' : 'document') as any
+              }];
             });
-          } catch (error) {
-            console.error('Error fetching WhatsApp media:', error);
+          } else {
+            try {
+              const accessibleUrl = getAccessibleMediaUrl(initialMessageData.mediaUrl);
+              const response = await fetch(accessibleUrl);
+              if (!response.ok) throw new Error('Failed to fetch media');
+              const blob = await response.blob();
+              const filename = initialMessageData.mediaType === 'image' ? 'whatsapp_image.jpg' : 'whatsapp_document.pdf';
+              const file = new File([blob], filename, { type: blob.type });
+              setQuickFiles(prev => {
+                if (prev.some(f => f.name === filename && f.size === file.size)) return prev;
+                return [...prev, file];
+              });
+            } catch (error) {
+              console.error('Error fetching WhatsApp media:', error);
+            }
           }
         }
       }
@@ -262,9 +288,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
     // URLs do Firebase Storage não precisam de proxy, elas já têm CORS configurado
     if (url.includes('firebasestorage.googleapis.com')) return url;
     
-    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas se estivermos no ambiente que o suporta
-    // No Firebase Hosting sem backend, o proxy não existirá.
-    // Se estivermos no AI Studio ou localhost, usamos o proxy.
+    // Para URLs externas temporárias (WhatsApp/Twilio/Z-API), usamos o proxy apenas no ambiente local/preview
     const isLocalOrPreview = window.location.hostname === 'localhost' || 
                              window.location.hostname.includes('ais-dev') || 
                              window.location.hostname.includes('ais-pre');
@@ -273,7 +297,9 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
       return `/api/whatsapp/proxy-media?url=${encodeURIComponent(url)}`;
     }
     
-    // Em produção (Firebase Hosting), se não for Firebase Storage, tentamos carregar direto
+    // Em produção (Firebase Hosting sem backend), o proxy do AI Studio falha por causa do bloqueio
+    // de CORS/Interstitial. Portanto, retornamos a URL original e confiamos que o webhook
+    // já fez o re-upload para o Firebase Storage. Se for uma mensagem antiga, tentará carregar direto.
     return url;
   };
 
@@ -503,11 +529,11 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
   };
 
   const handleRegisterInteraction = async () => {
-    if (!editDealData || (!quickNote && quickFiles.length === 0)) return;
+    if (!editDealData || (!quickNote && quickFiles.length === 0 && quickExistingMedia.length === 0)) return;
     setIsUploading(true);
     try {
         const actId = `act_${Date.now()}`;
-        const atts: Attachment[] = [];
+        const atts: Attachment[] = [...quickExistingMedia];
         for (const file of quickFiles) {
             const url = await uploadVisitFile(file, editDealData.clientId, actId);
             atts.push({ 
@@ -525,7 +551,7 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
           isDone: true,
           technicianId: user.id, attachments: atts, createdAt: new Date().toISOString()
         });
-        setQuickNote(''); setQuickFiles([]);
+        setQuickNote(''); setQuickFiles([]); setQuickExistingMedia([]);
     } catch (e) {
         alert("Erro ao salvar interação.");
     } finally {
@@ -1196,11 +1222,20 @@ const SalesFunnel: React.FC<SalesFunnelProps> = ({
 
                                 <textarea value={quickNote} onChange={e => setQuickNote(e.target.value)} className="w-full h-32 p-4 bg-white border border-slate-100 rounded-2xl text-sm font-bold outline-none focus:border-zorion-500 transition-all shadow-inner" placeholder={`Detalhes da ${interactionType}...`} />
                                 
-                                {quickFiles.length > 0 && (
+                                {(quickFiles.length > 0 || quickExistingMedia.length > 0) && (
                                   <div className="mt-4 space-y-2 max-h-40 overflow-y-auto custom-scrollbar pr-1">
-                                     <p className="text-[9px] font-black uppercase text-slate-400 px-1">Anexos prontos ({quickFiles.length}):</p>
+                                     <p className="text-[9px] font-black uppercase text-slate-400 px-1">Anexos prontos ({quickFiles.length + quickExistingMedia.length}):</p>
+                                     {quickExistingMedia.map((m, i) => (
+                                       <div key={`exist_${i}`} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100 group/file">
+                                          <div className="flex items-center gap-2 overflow-hidden">
+                                             {m.type === 'image' ? <ImageIcon size={12} className="text-purple-500 shrink-0" /> : <Paperclip size={12} className="text-slate-400 shrink-0" />}
+                                             <span className="text-[10px] font-bold text-slate-600 truncate">{m.name}</span>
+                                          </div>
+                                          <button type="button" onClick={() => setQuickExistingMedia(prev => prev.filter((_, idx) => idx !== i))} className="text-red-400 hover:text-red-600 p-1 transition-colors"><Trash2 size={14} /></button>
+                                       </div>
+                                     ))}
                                      {quickFiles.map((f, i) => (
-                                       <div key={i} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100 group/file">
+                                       <div key={`file_${i}`} className="flex items-center justify-between bg-slate-50 p-2 rounded-xl border border-slate-100 group/file">
                                           <div className="flex items-center gap-2 overflow-hidden">
                                              {f.type.startsWith('image/') ? <ImageIcon size={12} className="text-purple-500 shrink-0" /> : <Paperclip size={12} className="text-slate-400 shrink-0" />}
                                              <span className="text-[10px] font-bold text-slate-600 truncate">{f.name}</span>
